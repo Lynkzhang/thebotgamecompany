@@ -380,128 +380,139 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
         }),
       })
 
+      if (!response.ok) {
+        let errorMessage = '发送失败'
+        try {
+          const errorData = await response.json()
+          if (errorData?.error) errorMessage = errorData.error
+        } catch {}
+        throw new Error(errorMessage)
+      }
+
       if (createdSession && onSessionCreated) onSessionCreated(createdSession)
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let accText = ''
-      let accToolCalls = []
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() // Keep incomplete line
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const data = JSON.parse(line.slice(6))
-
-            switch (data.type) {
-              case 'text':
-                accText += data.content
-                setStreamingText(accText)
-                // Append to or update last text block
-                setStreamingBlocks(prev => {
-                  const last = prev[prev.length - 1]
-                  if (last && last.type === 'text') {
-                    return [...prev.slice(0, -1), { type: 'text', content: last.content + data.content }]
-                  }
-                  return [...prev, { type: 'text', content: data.content }]
-                })
-                break
-
-              case 'tool_call':
-                accToolCalls = [...accToolCalls, { id: data.id, name: data.name, input: data.input }]
-                setStreamingToolCalls([...accToolCalls])
-                setStreamingBlocks(prev => [...prev, { type: 'tool', id: data.id, name: data.name, input: data.input }])
-                break
-
-              case 'tool_result':
-                accToolCalls = accToolCalls.map(tc =>
-                  tc.id === data.id ? { ...tc, output: data.output } : tc
-                )
-                setStreamingToolCalls([...accToolCalls])
-                setStreamingBlocks(prev => prev.map(b =>
-                  b.type === 'tool' && b.id === data.id ? { ...b, output: data.output } : b
-                ))
-                break
-
-              case 'error':
-                accText += `\n\n⚠️ Error: ${data.content}`
-                setStreamingText(accText)
-                setStreamingBlocks(prev => [...prev, { type: 'text', content: `\n\n⚠️ Error: ${data.content}` }])
-                break
-
-              case 'done':
-                // Finalize — add assistant message with ordered blocks
-                if (accText || accToolCalls.length > 0) {
-                  setMessages(prev => [...prev, {
-                    role: 'assistant',
-                    content: accText,
-                    tool_calls: accToolCalls.length > 0 ? accToolCalls : null,
-                  }])
-                }
-                // cleared
-                break
-            }
-          } catch {}
-        }
-      }
-    } catch (err) {
-      // Connection lost — backend continues processing in background.
-      // Reload saved state and check if still streaming to reconnect.
-      setReconnecting(true)
       try {
-        const res = await fetch(`/api/projects/${selectedProject.id}/chats/${activeSession.id}`)
-        if (res.ok) {
-          const data = await res.json()
-          if (data.session?.messages) setMessages(data.session.messages)
-          if (data.streaming && data.streamingContent) {
-            // Still streaming — show current content and reconnect
-            setStreamingText(data.streamingContent.text || '')
-            setStreamingBlocks(data.streamingContent.toolCalls?.map(tc => ({ type: 'tool', ...tc })) || [])
-            // Reconnect SSE
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let accText = ''
+        let accToolCalls = []
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() // Keep incomplete line
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
             try {
-              const evtRes = await fetch(`/api/projects/${selectedProject.id}/chats/${activeSession.id}/stream`)
-              const reader = evtRes.body.getReader()
-              const decoder = new TextDecoder()
-              let buffer = ''
-              while (true) {
-                const { done, value } = await reader.read()
-                if (done) break
-                buffer += decoder.decode(value, { stream: true })
-                const lines = buffer.split('\n')
-                buffer = lines.pop()
-                for (const line of lines) {
-                  if (!line.startsWith('data: ')) continue
-                  try {
-                    const evt = JSON.parse(line.slice(6))
-                    if (evt.type === 'text') setStreamingBlocks(prev => {
-                      const last = prev[prev.length - 1]
-                      if (last?.type === 'text') return [...prev.slice(0, -1), { type: 'text', content: last.content + evt.content }]
-                      return [...prev, { type: 'text', content: evt.content }]
-                    })
-                    else if (evt.type === 'tool_call') setStreamingBlocks(prev => [...prev, { type: 'tool', ...evt }])
-                    else if (evt.type === 'tool_result') setStreamingBlocks(prev => prev.map(b => b.id === evt.id ? { ...b, output: evt.output } : b))
-                    else if (evt.type === 'done') {
-                      const finalRes2 = await fetch(`/api/projects/${selectedProject.id}/chats/${activeSession.id}`)
-                      const finalData2 = await finalRes2.json()
-                      if (finalData2.session?.messages) setMessages(finalData2.session.messages)
-                      break
+              const data = JSON.parse(line.slice(6))
+
+              switch (data.type) {
+                case 'text':
+                  accText += data.content
+                  setStreamingText(accText)
+                  setStreamingBlocks(prev => {
+                    const last = prev[prev.length - 1]
+                    if (last && last.type === 'text') {
+                      return [...prev.slice(0, -1), { type: 'text', content: last.content + data.content }]
                     }
-                  } catch {}
-                }
+                    return [...prev, { type: 'text', content: data.content }]
+                  })
+                  break
+
+                case 'tool_call':
+                  accToolCalls = [...accToolCalls, { id: data.id, name: data.name, input: data.input }]
+                  setStreamingToolCalls([...accToolCalls])
+                  setStreamingBlocks(prev => [...prev, { type: 'tool', id: data.id, name: data.name, input: data.input }])
+                  break
+
+                case 'tool_result':
+                  accToolCalls = accToolCalls.map(tc =>
+                    tc.id === data.id ? { ...tc, output: data.output } : tc
+                  )
+                  setStreamingToolCalls([...accToolCalls])
+                  setStreamingBlocks(prev => prev.map(b =>
+                    b.type === 'tool' && b.id === data.id ? { ...b, output: data.output } : b
+                  ))
+                  break
+
+                case 'error':
+                  accText += `\n\n⚠️ Error: ${data.content}`
+                  setStreamingText(accText)
+                  setStreamingBlocks(prev => [...prev, { type: 'text', content: `\n\n⚠️ Error: ${data.content}` }])
+                  break
+
+                case 'done':
+                  if (accText || accToolCalls.length > 0) {
+                    setMessages(prev => [...prev, {
+                      role: 'assistant',
+                      content: accText,
+                      tool_calls: accToolCalls.length > 0 ? accToolCalls : null,
+                    }])
+                  }
+                  break
               }
             } catch {}
           }
         }
-      } catch {}
-      setReconnecting(false)
+      } catch (streamErr) {
+        setReconnecting(true)
+        try {
+          const res = await fetch(`/api/projects/${selectedProject.id}/chats/${activeSession.id}`)
+          if (res.ok) {
+            const data = await res.json()
+            if (data.session?.messages) setMessages(data.session.messages)
+            if (data.streaming && data.streamingContent) {
+              setStreamingText(data.streamingContent.text || '')
+              setStreamingBlocks(data.streamingContent.toolCalls?.map(tc => ({ type: 'tool', ...tc })) || [])
+              try {
+                const evtRes = await fetch(`/api/projects/${selectedProject.id}/chats/${activeSession.id}/stream`)
+                const reader = evtRes.body.getReader()
+                const decoder = new TextDecoder()
+                let buffer = ''
+                while (true) {
+                  const { done, value } = await reader.read()
+                  if (done) break
+                  buffer += decoder.decode(value, { stream: true })
+                  const lines = buffer.split('\n')
+                  buffer = lines.pop()
+                  for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue
+                    try {
+                      const evt = JSON.parse(line.slice(6))
+                      if (evt.type === 'text') setStreamingBlocks(prev => {
+                        const last = prev[prev.length - 1]
+                        if (last?.type === 'text') return [...prev.slice(0, -1), { type: 'text', content: last.content + evt.content }]
+                        return [...prev, { type: 'text', content: evt.content }]
+                      })
+                      else if (evt.type === 'tool_call') setStreamingBlocks(prev => [...prev, { type: 'tool', ...evt }])
+                      else if (evt.type === 'tool_result') setStreamingBlocks(prev => prev.map(b => b.id === evt.id ? { ...b, output: evt.output } : b))
+                      else if (evt.type === 'done') {
+                        const finalRes2 = await fetch(`/api/projects/${selectedProject.id}/chats/${activeSession.id}`)
+                        const finalData2 = await finalRes2.json()
+                        if (finalData2.session?.messages) setMessages(finalData2.session.messages)
+                        break
+                      }
+                    } catch {}
+                  }
+                }
+              } catch {}
+            }
+          }
+        } catch {}
+        setReconnecting(false)
+        if (streamErr?.message) {
+          setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${streamErr.message}` }])
+        }
+      }
+    } catch (err) {
+      if (err?.message) {
+        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${err.message}` }])
+      }
     } finally {
       setStreaming(false)
       setStreamingText(''); setStreamingBlocks([])
