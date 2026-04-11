@@ -5,11 +5,11 @@ import { Badge } from '@/components/ui/badge'
 
 function statusMeta(milestone) {
   const status = milestone.status || 'active'
-  if (status === 'completed') return { label: '已完成', variant: 'success' }
-  if (status === 'failed') return { label: '失败', variant: 'warning' }
-  if (status === 'fixing') return { label: '修复中', variant: 'warning' }
-  if (status === 'verifying') return { label: '验证中', variant: 'secondary' }
-  return { label: '进行中', variant: 'default' }
+  if (status === 'completed') return { label: 'Completed', variant: 'success' }
+  if (status === 'failed') return { label: 'Failed', variant: 'warning' }
+  if (status === 'fixing') return { label: 'Fixing', variant: 'warning' }
+  if (status === 'verifying') return { label: 'Verifying', variant: 'secondary' }
+  return { label: 'Active', variant: 'default' }
 }
 
 export default function MilestonesCard({ milestones = [], currentMilestoneId = null, onOpenMilestone }) {
@@ -35,7 +35,7 @@ export default function MilestonesCard({ milestones = [], currentMilestoneId = n
                       {milestone.title || '未命名里程碑'}
                     </span>
                     <Badge variant={meta.variant}>{meta.label}</Badge>
-                    {isCurrent && <Badge variant="outline">当前</Badge>}
+                    {isCurrent && <Badge variant="outline">Current</Badge>}
                   </div>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2 whitespace-pre-wrap">
                     {milestone.description}

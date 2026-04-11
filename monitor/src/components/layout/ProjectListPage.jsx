@@ -246,13 +246,13 @@ export default function ProjectListPage({
                   <div className="flex items-center justify-between sm:justify-end gap-3 pl-13 sm:pl-0">
                     <div className="text-left sm:text-right">
                       <Badge variant={project.isComplete ? (project.completionSuccess ? 'success' : 'destructive') : project.paused ? 'warning' : project.sleeping ? 'secondary' : project.currentAgent ? 'success' : project.running ? 'success' : 'destructive'}>
-                        {project.isComplete ? (project.completionSuccess ? '✅ 已完成' : '🛑 已结束')
-                          : project.paused ? (project.currentAgent ? '⏳ 暂停中...' : '⏸️ 已暂停')
-                          : project.sleeping ? '💤 休眠中' 
+                        {project.isComplete ? (project.completionSuccess ? '✅ Complete' : '🛑 Ended')
+                          : project.paused ? (project.currentAgent ? '⏳ Pausing...' : '⏸️ Paused')
+                          : project.sleeping ? '💤 Sleeping' 
                           : project.activeAgents?.length > 1 ? `▶ ${project.activeAgents.length} 个 agent`
                           : project.currentAgent ? `▶ ${project.currentAgent}` 
-                          : project.running ? '运行中' 
-                          : '已停止'}
+                          : project.running ? 'Running' 
+                          : 'Stopped'}
                       </Badge>
                       {project.sleeping && project.sleepUntil && !project.paused && (
                         <p className="text-xs text-blue-500 dark:text-blue-400 mt-0.5 font-mono">

@@ -16,8 +16,8 @@ export function OrchestratorStateCard({ selectedProject, globalUptime, controlAc
           <div className="flex justify-between items-center">
             <span className="text-neutral-600 dark:text-neutral-300">状态</span>
             <Badge variant={selectedProject.isComplete ? (selectedProject.completionSuccess ? 'success' : 'destructive') : selectedProject.paused ? 'warning' : selectedProject.running ? 'success' : 'destructive'}>
-              {selectedProject.isComplete ? (selectedProject.completionSuccess ? '✅ 已完成' : '🛑 已结束')
-                : selectedProject.paused && selectedProject.currentAgent ? '⏳ 暂停中...' : selectedProject.paused ? '⏸️ 已暂停' : selectedProject.running ? '▶️ 运行中' : '⏹️ 已停止'}
+              {selectedProject.isComplete ? (selectedProject.completionSuccess ? '✅ Complete' : '🛑 Ended')
+                : selectedProject.paused && selectedProject.currentAgent ? '⏳ Pausing...' : selectedProject.paused ? '⏸️ Paused' : selectedProject.running ? '▶️ Running' : '⏹️ Stopped'}
             </Badge>
           </div>
           {selectedProject.isComplete && selectedProject.completionMessage && (
@@ -33,7 +33,7 @@ export function OrchestratorStateCard({ selectedProject, globalUptime, controlAc
             <span className="text-neutral-600 dark:text-neutral-300">当前 Agent</span>
             {selectedProject.sleeping ? (
               <Badge variant="secondary" className="flex items-center gap-1">
-                💤 休眠中
+                💤 Sleeping
                 {isWriteMode && <button onClick={(e) => { e.stopPropagation(); controlAction('skip') }} className="ml-1 hover:text-red-500 cursor-pointer" title="跳过休眠">✕</button>}
               </Badge>
             ) : (
@@ -130,21 +130,21 @@ function DangerZone({ controlAction, selectedProject }) {
             disabled={!selectedProject.currentAgent}
             className="w-full px-3 py-1.5 text-xs font-medium rounded border transition-colors disabled:opacity-30 disabled:cursor-not-allowed border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950"
           >
-            {confirming === 'kill-run' ? '⚠️ 再点一次确认' : '⏹ 终止当前执行'}
+            {confirming === 'kill-run' ? '⚠️ Click again to confirm' : '⏹ Kill Run'}
             <span className="block text-[10px] font-normal opacity-60">终止当前 agent，进入调度中的下一项</span>
           </button>
           <button
             onClick={() => handleKill('kill-cycle')}
             className="w-full px-3 py-1.5 text-xs font-medium rounded border transition-colors border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950"
           >
-            {confirming === 'kill-cycle' ? '⚠️ 再点一次确认' : '⏹ 终止本轮'}
+            {confirming === 'kill-cycle' ? '⚠️ Click again to confirm' : '⏹ Kill Cycle'}
             <span className="block text-[10px] font-normal opacity-60">终止当前 agent，并跳过剩余 worker</span>
           </button>
           <button
             onClick={() => handleKill('kill-epoch')}
             className="w-full px-3 py-1.5 text-xs font-medium rounded border transition-colors border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900"
           >
-            {confirming === 'kill-epoch' ? '⚠️ 再点一次确认' : '💀 终止当前 Epoch'}
+            {confirming === 'kill-epoch' ? '⚠️ Click again to confirm' : '💀 Kill Epoch'}
             <span className="block text-[10px] font-normal opacity-60">终止全部执行，回到 producer 规划阶段</span>
           </button>
         </div>

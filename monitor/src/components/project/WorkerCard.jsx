@@ -73,7 +73,7 @@ export default function WorkerCard({
         {agent.model && <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs rounded-full">{agent.model}</span>}
         {isActive && (
           <Badge variant="success" className="flex items-center gap-1">
-            运行中{runtime !== null && <span className="font-mono">{formatRuntime(runtime)}</span>}
+            Active{runtime !== null && <span className="font-mono">{formatRuntime(runtime)}</span>}
           </Badge>
         )}
       </div>

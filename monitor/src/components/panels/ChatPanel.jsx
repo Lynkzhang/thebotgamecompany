@@ -328,6 +328,7 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
     if ((!input.trim() && attachedImages.length === 0) || streaming || !chatSession || !selectedProject) return
 
     let activeSession = chatSession
+    let createdSession = null
 
     // If temp session, create it in DB first
     if (chatSession._temp) {
@@ -343,7 +344,7 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
         if (!res.ok) return
         const data = await res.json()
         activeSession = data.session
-        if (onSessionCreated) onSessionCreated(activeSession)
+        createdSession = data.session
       } catch { return }
     } else {
       // Double-check backend isn't already processing
@@ -378,6 +379,8 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
           })),
         }),
       })
+
+      if (createdSession && onSessionCreated) onSessionCreated(createdSession)
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
@@ -454,7 +457,7 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
       // Reload saved state and check if still streaming to reconnect.
       setReconnecting(true)
       try {
-        const res = await fetch(`/api/projects/${selectedProject.id}/chats/${chatSession.id}`)
+        const res = await fetch(`/api/projects/${selectedProject.id}/chats/${activeSession.id}`)
         if (res.ok) {
           const data = await res.json()
           if (data.session?.messages) setMessages(data.session.messages)
@@ -464,7 +467,7 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
             setStreamingBlocks(data.streamingContent.toolCalls?.map(tc => ({ type: 'tool', ...tc })) || [])
             // Reconnect SSE
             try {
-              const evtRes = await fetch(`/api/projects/${selectedProject.id}/chats/${chatSession.id}/stream`)
+              const evtRes = await fetch(`/api/projects/${selectedProject.id}/chats/${activeSession.id}/stream`)
               const reader = evtRes.body.getReader()
               const decoder = new TextDecoder()
               let buffer = ''
@@ -486,7 +489,7 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
                     else if (evt.type === 'tool_call') setStreamingBlocks(prev => [...prev, { type: 'tool', ...evt }])
                     else if (evt.type === 'tool_result') setStreamingBlocks(prev => prev.map(b => b.id === evt.id ? { ...b, output: evt.output } : b))
                     else if (evt.type === 'done') {
-                      const finalRes2 = await fetch(`/api/projects/${selectedProject.id}/chats/${chatSession.id}`)
+                      const finalRes2 = await fetch(`/api/projects/${selectedProject.id}/chats/${activeSession.id}`)
                       const finalData2 = await finalRes2.json()
                       if (finalData2.session?.messages) setMessages(finalData2.session.messages)
                       break
