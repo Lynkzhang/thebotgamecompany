@@ -114,7 +114,6 @@ export default function ProjectView({
 
   // Agent settings modal
   const [agentSettingsModal, setAgentSettingsModal] = useState({ open: false, agent: null, model: '', saving: false, error: null })
-  const [availableModels, setAvailableModels] = useState([])
 
   // Per-project notification settings
   const [projectNotifs, setProjectNotifs] = useState(() => {
@@ -262,14 +261,6 @@ export default function ProjectView({
       }
     }
   }, [selectedProject?.id])
-
-  // Fetch models on mount
-  useEffect(() => {
-    fetch('/api/models').then(r => r.json()).then(data => {
-      if (data.data) setAvailableModels(data.data)
-    }).catch(() => {})
-  }, [])
-
 
   // Poll for live agent log
   useEffect(() => {
@@ -437,7 +428,7 @@ export default function ProjectView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: agentSettingsModal.model })
       })
-      if (!res.ok) throw new Error((await res.json()).error || 'Failed to save')
+      if (!res.ok) throw new Error((await res.json()).error || '保存失败')
       setAgentSettingsModal(prev => ({ ...prev, open: false }))
       fetchProjectData()
     } catch (e) {
@@ -617,9 +608,10 @@ export default function ProjectView({
               <button
                 onClick={() => setProjectSettingsOpen(true)}
                 className="p-1.5 rounded bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-600 dark:text-neutral-300 transition-colors"
-                title="项目设置"
+                title="项目 / 凭据 / 模型 / MCP 设置"
               >
                 <Settings className="w-4 h-4" />
+                <span className="hidden lg:inline ml-1.5 text-sm">项目/MCP</span>
               </button>
               <a href={projectApi('/download')} className="p-1.5 rounded bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-600 dark:text-neutral-300 inline-flex items-center" title="下载工作区 ZIP">
                 <Save className="w-4 h-4" />
@@ -757,11 +749,42 @@ export default function ProjectView({
                 isWriteMode={isWriteMode}
               />
 
+              <IssuesSidebar
+                issues={issues}
+                issueFilter={issueFilter}
+                setIssueFilter={setIssueFilter}
+                openIssueModal={openIssueModal}
+                setCreateIssueModal={setCreateIssueModal}
+                isWriteMode={isWriteMode}
+              />
+
               {isWriteMode && <ChatCard
                 selectedProject={selectedProject}
+                agents={[...agents.managers, ...agents.workers]}
                 onOpenChat={(session) => { setChatSession(session); setChatPanelOpen(true) }}
                 onNewChat={(session) => { setChatSession(session); setChatPanelOpen(true) }}
               />}
+
+              <DashboardWidget icon={ChevronDown} title="当前里程碑">
+                  <div className="space-y-2 text-sm">
+                    <div className="font-medium text-neutral-800 dark:text-neutral-100">
+                      {selectedProject.milestoneTitle || '暂无里程碑标题'}
+                    </div>
+                    <p className="text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap leading-relaxed">
+                      {selectedProject.milestoneDescription || selectedProject.milestone || '当前还没有正在执行的里程碑。'}
+                    </p>
+                    {selectedProject.milestoneCyclesBudget > 0 && (
+                      <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                        进度：{selectedProject.milestoneCyclesUsed || 0} / {selectedProject.milestoneCyclesBudget} 轮
+                      </div>
+                    )}
+                    {selectedProject.pendingCompletionMessage && (
+                      <div className="text-xs rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-2 text-amber-700 dark:text-amber-300">
+                        待最终验收：{selectedProject.pendingCompletionMessage}
+                      </div>
+                    )}
+                  </div>
+              </DashboardWidget>
 
               <DashboardWidget icon={Sparkles} title={`管理岗位（${agents.managers.length}）`}>
                   <div className="space-y-2">
@@ -800,25 +823,6 @@ export default function ProjectView({
                   </div>
               </DashboardWidget>
 
-              <DashboardWidget icon={GitPullRequest} title={`打开中的 PR（${prs.length}）`}>
-                  <div className="space-y-2">
-                    {prs.map((pr) => (
-                      <a key={pr.number} href={`${repoUrl}/pull/${pr.number}`} target="_blank" rel="noopener noreferrer"
-                        className="block p-2 bg-neutral-50 dark:bg-neutral-900 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded cursor-pointer transition-colors">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-neutral-400 dark:text-neutral-500">#{pr.number}</span>
-                          <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">{pr.shortTitle || pr.title}</span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                          {pr.agent && <span className="flex items-center gap-1"><User className="w-3 h-3" />{pr.agent}</span>}
-                          <span className="truncate">{pr.headRefName}</span>
-                        </div>
-                      </a>
-                    ))}
-                    {prs.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">暂无打开中的 PR</p>}
-                  </div>
-              </DashboardWidget>
-
               <AgentReportsCard
                 comments={comments}
                 commentsLoading={commentsLoading}
@@ -829,15 +833,35 @@ export default function ProjectView({
                 setReportsPanelOpen={setReportsPanelOpen}
               />
 
-              <IssuesSidebar
-                issues={issues}
-                issueFilter={issueFilter}
-                setIssueFilter={setIssueFilter}
-                openIssueModal={openIssueModal}
-                setCreateIssueModal={setCreateIssueModal}
-                isWriteMode={isWriteMode}
-              />
             </div>
+
+            <Card className="mt-4">
+              <CardHeader><CardTitle className="flex items-center gap-2"><GitPullRequest className="w-4 h-4" />打开中的 PR（{prs.length}）</CardTitle></CardHeader>
+              <CardContent>
+                <details>
+                  <summary className="cursor-pointer text-sm text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100">
+                    {prs.length > 0 ? `展开查看 ${prs.length} 个 PR` : '当前没有打开中的 PR'}
+                  </summary>
+                  {prs.length > 0 && (
+                    <div className="space-y-2 mt-3">
+                      {prs.map((pr) => (
+                        <a key={pr.number} href={`${repoUrl}/pull/${pr.number}`} target="_blank" rel="noopener noreferrer"
+                          className="block p-2 bg-neutral-50 dark:bg-neutral-900 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded cursor-pointer transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-neutral-400 dark:text-neutral-500">#{pr.number}</span>
+                            <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">{pr.shortTitle || pr.title}</span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                            {pr.agent && <span className="flex items-center gap-1"><User className="w-3 h-3" />{pr.agent}</span>}
+                            <span className="truncate">{pr.headRefName}</span>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </details>
+              </CardContent>
+            </Card>
 
             {/* Logs */}
             <Card className="mt-4">
@@ -866,7 +890,13 @@ export default function ProjectView({
       </div>
 
       <AgentDetailPanel agentModal={agentModal} setAgentModal={setAgentModal} />
-      <AgentSettingsModal agentSettingsModal={agentSettingsModal} setAgentSettingsModal={setAgentSettingsModal} saveAgentSettings={saveAgentSettings} />
+      <AgentSettingsModal
+        agentSettingsModal={agentSettingsModal}
+        setAgentSettingsModal={setAgentSettingsModal}
+        saveAgentSettings={saveAgentSettings}
+        provider={config.provider}
+        availableModels={config.availableModels?.[config.provider] || []}
+      />
       <BootstrapPanel bootstrapModal={bootstrapModal} setBootstrapModal={setBootstrapModal} executeBootstrap={executeBootstrap} />
       <BudgetInfoModal open={budgetInfoModal} onClose={() => setBudgetInfoModal(false)} />
       <IntervalInfoModal open={intervalInfoModal} onClose={() => setIntervalInfoModal(false)} />
@@ -888,7 +918,6 @@ export default function ProjectView({
         selectedProject={selectedProject}
         chatSession={chatSession}
         onSessionCreated={(session) => setChatSession(session)}
-        modelTiers={config?.tiers || {}}
       />
       <ReportsPanel
         open={reportsPanelOpen}

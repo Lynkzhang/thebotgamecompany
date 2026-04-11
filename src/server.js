@@ -539,16 +539,44 @@ class ProjectRunner {
 
   get repo() {
     if (this._repo === null) {
+      const remotesToTry = [];
       try {
-        const remoteUrl = execSync('git remote get-url origin', {
+        const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
           cwd: this.path,
           encoding: 'utf-8'
         }).trim();
-        const match = remoteUrl.match(/github\.com[:/]([^/]+\/[^/.]+)/);
-        this._repo = match ? match[1] : null;
-      } catch {
-        this._repo = null;
+        const branchRemote = execSync(`git config --get branch.${currentBranch}.remote`, {
+          cwd: this.path,
+          encoding: 'utf-8'
+        }).trim();
+        if (branchRemote) remotesToTry.push(branchRemote);
+      } catch {}
+      try {
+        const allRemotes = execSync('git remote', {
+          cwd: this.path,
+          encoding: 'utf-8'
+        }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        for (const preferred of ['fork', 'upstream', 'origin']) {
+          if (allRemotes.includes(preferred) && !remotesToTry.includes(preferred)) remotesToTry.push(preferred);
+        }
+        for (const remote of allRemotes) {
+          if (!remotesToTry.includes(remote)) remotesToTry.push(remote);
+        }
+      } catch {}
+      for (const remote of remotesToTry) {
+        try {
+          const remoteUrl = execSync(`git remote get-url ${remote}`, {
+            cwd: this.path,
+            encoding: 'utf-8'
+          }).trim();
+          const match = remoteUrl.match(/github\.com[:/]([^/]+\/[^/.]+)/);
+          if (match) {
+            this._repo = match[1];
+            break;
+          }
+        } catch {}
       }
+      if (this._repo === null) this._repo = null;
     }
     return this._repo;
   }
@@ -3948,7 +3976,7 @@ const server = http.createServer(async (req, res) => {
       req.on('end', () => {
         try {
           const data = body ? JSON.parse(body) : {};
-          const session = chatCreateSession(runner.agentDir, data.title);
+          const session = chatCreateSession(runner.agentDir, data.title, data.agentName || null);
           res.writeHead(201, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ session }));
         } catch (e) {
@@ -4117,6 +4145,13 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
+          const session = chatGetSession(runner.agentDir, chatId);
+          if (!session) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Session not found' }));
+            return;
+          }
+
           // Resolve API key
           const config = runner.loadConfig();
           const oauthTokenGetter = async (authFile, provider) => {
@@ -4129,8 +4164,10 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // Resolve model from request's model tier (frontend sends it with each message)
-          const modelTier = data.modelTier || 'high';
+          const agentName = session.agent_name ? normalizeAgentName(session.agent_name) : null;
+          const agentDetails = agentName ? runner.getAgentDetails(agentName) : null;
+          const agentModel = agentDetails?.model || null;
+          const modelTier = data.modelTier || agentModel || 'high';
           const providerHint = keyResult.provider || detectProviderFromToken(keyResult.token);
           const runtimeSelection = getProviderRuntimeSelection({
             provider: providerHint,
@@ -4163,6 +4200,8 @@ const server = http.createServer(async (req, res) => {
             customConfig: runtimeSelection.customConfig || null,
             res,
             reasoningEffort: runtimeSelection.reasoningEffort || null,
+            agentName,
+            agentPrompt: agentDetails?.skill || '',
           };
 
           try {

@@ -98,11 +98,10 @@ function MessageBubble({ msg }) {
   )
 }
 
-export default function ChatPanel({ open, onClose, selectedProject, chatSession, onSessionCreated, modelTiers = {} }) {
+export default function ChatPanel({ open, onClose, selectedProject, chatSession, onSessionCreated }) {
   const { authFetch } = useAuth()
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
-  const [modelTier, setModelTier] = useState(chatSession?.model_tier || 'high')
   const [attachedImages, setAttachedImages] = useState([]) // [{ file, preview, uploaded: { filename, url, mimeType } }]
   const fileInputRef = useRef(null)
   const [streaming, setStreaming] = useState(false)
@@ -283,13 +282,12 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
 
   useEffect(() => { scrollToBottom() }, [messages, streamingText, streamingToolCalls])
 
-  // Reset streaming state and sync model tier when panel opens
+  // Reset streaming state when panel opens
   useEffect(() => {
     if (open) {
       setStreaming(false)
       setStreamingBlocks([])
       setStreamingText(''); setStreamingToolCalls([])
-      if (chatSession?.model_tier) setModelTier(chatSession.model_tier)
       if (inputRef.current) setTimeout(() => inputRef.current?.focus(), 350)
     }
   }, [open, chatSession?.id])
@@ -337,7 +335,10 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
         const res = await authFetch(`/api/projects/${selectedProject.id}/chats`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
+          body: JSON.stringify({
+            title: chatSession.title || null,
+            agentName: chatSession.agent_name || null,
+          }),
         })
         if (!res.ok) return
         const data = await res.json()
@@ -371,7 +372,6 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMsg,
-          modelTier,
           images: attachedImages.filter(a => a.uploaded).map(a => ({
             filename: a.uploaded.filename,
             mimeType: a.uploaded.mimeType,
@@ -514,16 +514,16 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
   }
 
   return (
-    <Panel id="chat" open={open} onClose={onClose}>
+      <Panel id="chat" open={open} onClose={onClose}>
       <PanelHeader onClose={onClose}>
-        💬 {chatSession?.title || 'Chat'}
+        💬 {chatSession?.title || '对话'}
       </PanelHeader>
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
         {/* Messages area */}
         <div ref={messagesContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-1 overscroll-contain">
           {messages.length === 0 && !streaming && (
             <div className="text-center text-neutral-400 dark:text-neutral-500 text-sm py-12">
-              Ask anything about the project...
+              {chatSession?.agent_name ? `正在与 ${chatSession.agent_name} 对话` : '先选择一个 agent 开始对话'}
             </div>
           )}
           {messages.map((msg, i) => (
@@ -564,23 +564,13 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
           </div>
         )}
 
-        {/* Model selector + Input area */}
+        {/* Input area */}
         <div className="border-t border-neutral-200 dark:border-neutral-700 p-3 bg-white dark:bg-neutral-800">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[11px] text-neutral-400 dark:text-neutral-500">Model</span>
-            <select
-              value={modelTier}
-              onChange={(e) => setModelTier(e.target.value)}
-              className="px-2 py-0.5 text-xs bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 rounded text-neutral-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              {['high', 'mid', 'low', 'xlow'].map(tier => {
-                const info = modelTiers[tier]
-                const label = info?.model
-                  ? `${tier.charAt(0).toUpperCase() + tier.slice(1)} — ${info.model}${info.reasoningEffort ? ` (${info.reasoningEffort})` : ''}`
-                  : tier.charAt(0).toUpperCase() + tier.slice(1)
-                return <option key={tier} value={tier}>{label}</option>
-              })}
-            </select>
+          <div className="flex items-center gap-2 mb-2 text-[11px] text-neutral-400 dark:text-neutral-500">
+            <span>对话对象</span>
+            <span className="px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200">
+              {chatSession?.agent_name || '未指定'}
+            </span>
           </div>
           {/* Image previews */}
           {attachedImages.length > 0 && (
@@ -609,7 +599,7 @@ export default function ChatPanel({ open, onClose, selectedProject, chatSession,
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Type a message..."
+               placeholder={chatSession?.agent_name ? `给 ${chatSession.agent_name} 发消息...` : '输入消息...'}
               disabled={streaming}
               rows={1}
               className="flex-1 resize-none rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3 py-2 text-base text-neutral-800 dark:text-neutral-100 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 max-h-32 overflow-y-auto"

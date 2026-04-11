@@ -47,7 +47,7 @@ export default function WorkerCard({
           <button
             onClick={() => openAgentSettings(agent)}
             className="p-1 rounded transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300"
-            title="Agent 设置"
+            title="Agent 模型设置"
           >
             <Settings className="w-3.5 h-3.5" />
           </button>

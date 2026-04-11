@@ -118,8 +118,11 @@ export default function ProjectSettingsPanel({
 
   return (
     <Panel id="project-settings" open={projectSettingsOpen} onClose={() => setProjectSettingsOpen(false)}>
-      <PanelHeader onClose={() => setProjectSettingsOpen(false)}>项目设置</PanelHeader>
+      <PanelHeader onClose={() => setProjectSettingsOpen(false)}>项目设置（通知 / 凭据 / 模型 / MCP）</PanelHeader>
       <PanelContent>
+        <div className="pb-5 text-xs text-neutral-500 dark:text-neutral-400">
+          这里可以配置项目通知、固定凭据、默认模型覆盖，以及项目级 MCP 服务。
+        </div>
         {/* Notifications section */}
         <div className="pb-5">
           <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-3">通知</h3>
@@ -351,7 +354,7 @@ export default function ProjectSettingsPanel({
 
         <div className="border-t border-neutral-200 dark:border-neutral-700 pt-5 mt-5">
           <div className="flex items-center justify-between mb-3">
-             <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">MCP 服务</h3>
+             <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">MCP 服务（项目级）</h3>
             {isWriteMode && (
               <Button
                 variant="outline"

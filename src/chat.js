@@ -90,6 +90,7 @@ function getChatDb(agentDir) {
     CREATE TABLE IF NOT EXISTS chat_sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL DEFAULT 'New Chat',
+      agent_name TEXT DEFAULT NULL,
 
       created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
       updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -103,6 +104,7 @@ function getChatDb(agentDir) {
       created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
   `);
+  try { db.exec('ALTER TABLE chat_sessions ADD COLUMN agent_name TEXT DEFAULT NULL'); } catch {}
 
   return db;
 }
@@ -126,10 +128,11 @@ export function listSessions(agentDir) {
   }
 }
 
-export function createSession(agentDir, title) {
+export function createSession(agentDir, title, agentName = null) {
   const db = getChatDb(agentDir);
   try {
-    const result = db.prepare('INSERT INTO chat_sessions (title) VALUES (?)').run(title || 'New Chat');
+    const defaultTitle = title || (agentName ? `与 ${agentName} 对话` : 'New Chat');
+    const result = db.prepare('INSERT INTO chat_sessions (title, agent_name) VALUES (?, ?)').run(defaultTitle, agentName || null);
     return db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(result.lastInsertRowid);
   } finally {
     db.close();
@@ -290,7 +293,7 @@ function getChatToolDefinitions() {
  * @param {string} [opts.reasoningEffort] - Optional reasoning effort
  */
 export async function streamChatMessage(opts) {
-  const { agentDir, projectPath, chatId, userMessage, images = [], model, token, provider, customConfig = null, res, reasoningEffort } = opts;
+  const { agentDir, projectPath, chatId, userMessage, images = [], model, token, provider, customConfig = null, res, reasoningEffort, agentName = null, agentPrompt = '' } = opts;
 
   // Initialize active stream tracking
   const stream = { text: '', toolCalls: [], clients: new Set() };
@@ -340,7 +343,10 @@ export async function streamChatMessage(opts) {
   } catch {
     skillContent = 'You are a helpful AI assistant for a software project.';
   }
-  const systemPrompt = skillContent.replace(/\{worktree_path\}/g, worktreePath);
+  let systemPrompt = skillContent.replace(/\{worktree_path\}/g, worktreePath);
+  if (agentName && agentPrompt) {
+    systemPrompt += `\n\n## 当前对话代理\n你当前以项目内 agent \`${agentName}\` 的身份协助用户。以下是该 agent 的技能说明，你在回答和执行时应优先遵守：\n\n${agentPrompt}`;
+  }
 
   // Convert stored messages to pi-ai format
   // Only include text content from history (not tool calls/results) to avoid

@@ -1,12 +1,19 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { MessageCircle, Plus, Trash2 } from 'lucide-react'
 import DashboardWidget from '@/components/ui/DashboardWidget'
 import { useAuth } from '@/hooks/useAuth'
 
-export default function ChatCard({ selectedProject, onOpenChat, onNewChat }) {
+export default function ChatCard({ selectedProject, onOpenChat, onNewChat, agents = [] }) {
   const { authFetch } = useAuth()
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(false)
+  const [newAgent, setNewAgent] = useState('')
+
+  const chatAgents = useMemo(() => agents.filter(agent => agent?.name), [agents])
+
+  useEffect(() => {
+    if (!newAgent && chatAgents.length > 0) setNewAgent(chatAgents[0].name)
+  }, [chatAgents, newAgent])
 
   const fetchSessions = async () => {
     if (!selectedProject) return
@@ -24,9 +31,9 @@ export default function ChatCard({ selectedProject, onOpenChat, onNewChat }) {
   useEffect(() => { fetchSessions() }, [selectedProject?.id])
 
   const handleNew = () => {
-    if (!selectedProject) return
+    if (!selectedProject || !newAgent) return
     // Create a temporary unsaved session — only persists to DB on first message
-    const tempSession = { id: null, title: '新对话', _temp: true }
+    const tempSession = { id: null, title: `与 ${newAgent} 对话`, agent_name: newAgent, _temp: true }
     if (onNewChat) onNewChat(tempSession)
   }
 
@@ -41,15 +48,26 @@ export default function ChatCard({ selectedProject, onOpenChat, onNewChat }) {
   return (
     <DashboardWidget
       icon={MessageCircle}
-      title="对话"
+      title="Agent 对话"
       headerRight={
-        <button
-          onClick={handleNew}
-          className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-500 dark:text-neutral-400 transition-colors"
-          title="新建对话"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={newAgent}
+            onChange={(e) => setNewAgent(e.target.value)}
+            className="max-w-[150px] px-2 py-1 text-xs rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
+            title="选择对话 agent"
+          >
+            {chatAgents.map(agent => <option key={agent.name} value={agent.name}>{agent.name}</option>)}
+          </select>
+          <button
+            onClick={handleNew}
+            disabled={!newAgent}
+            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-500 dark:text-neutral-400 transition-colors disabled:opacity-50"
+            title="新建对话"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
       }
     >
         <div className="divide-y divide-neutral-100 dark:divide-neutral-800 overflow-y-auto h-full">
@@ -68,6 +86,11 @@ export default function ChatCard({ selectedProject, onOpenChat, onNewChat }) {
                 <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate flex-1">
                   {session.title}
                 </span>
+                {session.agent_name && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 whitespace-nowrap">
+                    {session.agent_name}
+                  </span>
+                )}
                 <span className="text-[11px] text-neutral-400 dark:text-neutral-500 whitespace-nowrap">
                   {session.message_count || 0} 条消息
                 </span>
