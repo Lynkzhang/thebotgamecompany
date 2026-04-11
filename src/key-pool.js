@@ -6,12 +6,13 @@
  */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import yaml from 'js-yaml';
 import { normalizeCustomConfig } from './providers/custom-config.js';
 
-const TBC_HOME = process.env.TBC_HOME || path.join(process.env.HOME, '.thebotcompany');
+const TBC_HOME = process.env.TBC_HOME || path.join(process.env.HOME || os.homedir(), '.thebotcompany');
 const POOL_PATH = path.join(TBC_HOME, 'key-pool.json');
 
 // ---------------------------------------------------------------------------

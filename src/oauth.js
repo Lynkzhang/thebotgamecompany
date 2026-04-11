@@ -8,13 +8,14 @@
  */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import {
   getOAuthProvider,
   getOAuthProviders,
 } from '@mariozechner/pi-ai/oauth';
 
-const TBC_HOME = process.env.TBC_HOME || path.join(process.env.HOME, '.thebotcompany');
+const TBC_HOME = process.env.TBC_HOME || path.join(process.env.HOME || os.homedir(), '.thebotcompany');
 
 // ---------------------------------------------------------------------------
 // Credential persistence

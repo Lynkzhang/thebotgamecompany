@@ -9,6 +9,7 @@ import { PanelSlot, closeAllPanels } from '@/components/ui/panel'
 import Footer from '@/components/layout/Footer'
 import { OrchestratorStateCard, CostBudgetCard } from '@/components/project/OrchestratorState'
 import WorkerCard from '@/components/project/WorkerCard'
+import MilestonesCard from '@/components/project/MilestonesCard'
 import IssuesSidebar from '@/components/project/IssuesSidebar'
 import HumanInterventionCard from '@/components/project/HumanInterventionCard'
 import AgentReportsCard from '@/components/project/AgentReportsCard'
@@ -24,6 +25,7 @@ import ProjectSettingsPanel from '@/components/panels/ProjectSettingsPanel'
 import LoginModal from '@/components/modals/LoginModal'
 import ApiKeyHelpModal from '@/components/modals/ApiKeyHelpModal'
 import AgentSettingsModal from '@/components/modals/AgentSettingsModal'
+import MilestoneDetailModal from '@/components/modals/MilestoneDetailModal'
 import BudgetInfoModal from '@/components/modals/BudgetInfoModal'
 import IntervalInfoModal from '@/components/modals/IntervalInfoModal'
 import TimeoutInfoModal from '@/components/modals/TimeoutInfoModal'
@@ -57,6 +59,7 @@ export default function ProjectView({
   const [config, setConfig] = useState({ config: null, raw: '' })
   const [prs, setPrs] = useState([])
   const [issues, setIssues] = useState([])
+  const [milestones, setMilestones] = useState([])
   const [issueFilter, setIssueFilter] = useState('open')
   const [repoUrl, setRepoUrl] = useState(null)
   const [projectLoading, setProjectLoading] = useState(false)
@@ -109,6 +112,7 @@ export default function ProjectView({
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false)
   const [chatPanelOpen, setChatPanelOpen] = useState(false)
   const [chatSession, setChatSession] = useState(null)
+  const [milestoneModal, setMilestoneModal] = useState({ open: false, milestone: null })
 
   // Project settings (token state now managed inside ProjectSettingsPanel)
 
@@ -133,12 +137,13 @@ export default function ProjectView({
     if (initial) setProjectLoading(true)
     
     try {
-      const [logsRes, agentsRes, configRes, prsRes, issuesRes, repoRes] = await Promise.all([
+      const [logsRes, agentsRes, configRes, prsRes, issuesRes, milestonesRes, repoRes] = await Promise.all([
         fetch(`${baseApi}/logs?lines=100`),
         fetch(`${baseApi}/agents`),
         fetch(`${baseApi}/config`),
         fetch(`${baseApi}/prs`),
         fetch(`${baseApi}/issues`).catch(() => ({ ok: false })),
+        fetch(`${baseApi}/milestones`).catch(() => ({ ok: false })),
         fetch(`${baseApi}/repo`)
       ])
       
@@ -161,6 +166,9 @@ export default function ProjectView({
       setPrs((await prsRes.json()).prs || [])
       if (issuesRes.ok) {
         setIssues((await issuesRes.json()).issues || [])
+      }
+      if (milestonesRes.ok) {
+        setMilestones((await milestonesRes.json()).milestones || [])
       }
       setRepoUrl((await repoRes.json()).url)
     } catch (err) {
@@ -221,6 +229,7 @@ export default function ProjectView({
       setCommentsPage(1)
       setPrs([])
       setIssues([])
+      setMilestones([])
       setIssueFilter('open')
 
 
@@ -611,7 +620,6 @@ export default function ProjectView({
                 title="项目 / 凭据 / 模型 / MCP 设置"
               >
                 <Settings className="w-4 h-4" />
-                <span className="hidden lg:inline ml-1.5 text-sm">项目/MCP</span>
               </button>
               <a href={projectApi('/download')} className="p-1.5 rounded bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-600 dark:text-neutral-300 inline-flex items-center" title="下载工作区 ZIP">
                 <Save className="w-4 h-4" />
@@ -765,26 +773,11 @@ export default function ProjectView({
                 onNewChat={(session) => { setChatSession(session); setChatPanelOpen(true) }}
               />}
 
-              <DashboardWidget icon={ChevronDown} title="当前里程碑">
-                  <div className="space-y-2 text-sm">
-                    <div className="font-medium text-neutral-800 dark:text-neutral-100">
-                      {selectedProject.milestoneTitle || '暂无里程碑标题'}
-                    </div>
-                    <p className="text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap leading-relaxed">
-                      {selectedProject.milestoneDescription || selectedProject.milestone || '当前还没有正在执行的里程碑。'}
-                    </p>
-                    {selectedProject.milestoneCyclesBudget > 0 && (
-                      <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                        进度：{selectedProject.milestoneCyclesUsed || 0} / {selectedProject.milestoneCyclesBudget} 轮
-                      </div>
-                    )}
-                    {selectedProject.pendingCompletionMessage && (
-                      <div className="text-xs rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-2 text-amber-700 dark:text-amber-300">
-                        待最终验收：{selectedProject.pendingCompletionMessage}
-                      </div>
-                    )}
-                  </div>
-              </DashboardWidget>
+              <MilestonesCard
+                milestones={milestones}
+                currentMilestoneId={selectedProject.currentMilestoneId}
+                onOpenMilestone={(milestone) => setMilestoneModal({ open: true, milestone })}
+              />
 
               <DashboardWidget icon={Sparkles} title={`管理岗位（${agents.managers.length}）`}>
                   <div className="space-y-2">
@@ -963,6 +956,11 @@ export default function ProjectView({
         fetchProjectData={fetchProjectData}
         fetchGlobalStatus={fetchGlobalStatus}
         removeProject={removeProject}
+      />
+      <MilestoneDetailModal
+        open={milestoneModal.open}
+        milestone={milestoneModal.milestone}
+        onClose={() => setMilestoneModal({ open: false, milestone: null })}
       />
       <NotificationPanel
         open={notifCenter}

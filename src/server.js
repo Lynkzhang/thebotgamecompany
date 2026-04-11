@@ -8,6 +8,7 @@
 
 import http from 'http';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
@@ -30,9 +31,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 
 // Load .env from TBC_HOME (~/.thebotcompany/.env)
-const TBC_HOME_EARLY = process.env.TBC_HOME || path.join(process.env.HOME, '.thebotcompany');
+const HOME_DIR = process.env.HOME || os.homedir();
+const TBC_HOME_EARLY = process.env.TBC_HOME || path.join(HOME_DIR, '.thebotcompany');
 loadDotenv({ path: path.join(TBC_HOME_EARLY, '.env') });
-const TBC_HOME = process.env.TBC_HOME || path.join(process.env.HOME, '.thebotcompany');
+const TBC_HOME = process.env.TBC_HOME || path.join(HOME_DIR, '.thebotcompany');
 const MONITOR_DIST = path.join(ROOT, 'monitor', 'dist');
 const AGENT_NAME_ALIASES = { athena: 'producer', ares: 'pm', apollo: 'qa_lead', themis: 'final_review' };
 const PHASE_ALIASES = { athena: 'planning' };
@@ -190,6 +192,7 @@ let VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
 const VAPID_EMAIL = process.env.VAPID_EMAIL || 'mailto:admin@example.com';
 if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
   const envPath = path.join(TBC_HOME, '.env');
+  fs.mkdirSync(TBC_HOME, { recursive: true });
   const vapidKeys = webpush.generateVAPIDKeys();
   VAPID_PUBLIC = vapidKeys.publicKey;
   VAPID_PRIVATE = vapidKeys.privateKey;
@@ -342,7 +345,7 @@ const MIME_TYPES = {
 class ProjectRunner {
   constructor(id, config) {
     this.id = id;
-    this.path = config.path.replace(/^~/, process.env.HOME);
+    this.path = config.path.replace(/^~/, HOME_DIR);
     this.enabled = config.enabled !== false;
     this.archived = config.archived === true;
     this.cycleCount = 0;   // Cycles: manager + worker runs
@@ -361,6 +364,7 @@ class ProjectRunner {
     this.phase = 'planning';
     this.milestoneTitle = null;
     this.milestoneDescription = null;
+    this.currentMilestoneId = null;
     this.milestoneCyclesBudget = 0;
     this.milestoneCyclesUsed = 0;
     this.verificationFeedback = null;
@@ -958,9 +962,72 @@ class ProjectRunner {
       CREATE TABLE IF NOT EXISTS agents (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, role TEXT, reports_to TEXT, model TEXT, disabled INTEGER DEFAULT 0, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')));
       CREATE TABLE IF NOT EXISTS issues (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT DEFAULT '', status TEXT DEFAULT 'open', creator TEXT NOT NULL, assignee TEXT, labels TEXT DEFAULT '', created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), closed_at TEXT);
       CREATE TABLE IF NOT EXISTS comments (id INTEGER PRIMARY KEY AUTOINCREMENT, issue_id INTEGER NOT NULL REFERENCES issues(id), author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')));
-      CREATE TABLE IF NOT EXISTS milestones (id INTEGER PRIMARY KEY AUTOINCREMENT, description TEXT NOT NULL, cycles_budget INTEGER DEFAULT 20, cycles_used INTEGER DEFAULT 0, phase TEXT DEFAULT 'implementation', status TEXT DEFAULT 'active', created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), completed_at TEXT);
+      CREATE TABLE IF NOT EXISTS milestones (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT NOT NULL, cycles_budget INTEGER DEFAULT 20, cycles_used INTEGER DEFAULT 0, phase TEXT DEFAULT 'implementation', status TEXT DEFAULT 'active', verification_feedback TEXT, examination_feedback TEXT, completion_message TEXT, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), completed_at TEXT);
     `);
+    try { db.exec('ALTER TABLE milestones ADD COLUMN title TEXT'); } catch {}
+    try { db.exec('ALTER TABLE milestones ADD COLUMN verification_feedback TEXT'); } catch {}
+    try { db.exec('ALTER TABLE milestones ADD COLUMN examination_feedback TEXT'); } catch {}
+    try { db.exec('ALTER TABLE milestones ADD COLUMN completion_message TEXT'); } catch {}
     return db;
+  }
+
+  createMilestoneRecord({ title, description, cyclesBudget }) {
+    const db = this.getDb();
+    try {
+      const result = db.prepare(`
+        INSERT INTO milestones (title, description, cycles_budget, cycles_used, phase, status)
+        VALUES (?, ?, ?, 0, 'implementation', 'active')
+      `).run(title || null, description, cyclesBudget || 20);
+      return result.lastInsertRowid;
+    } finally {
+      db.close();
+    }
+  }
+
+  updateMilestoneRecord(id, patch = {}) {
+    if (!id) return;
+    const allowed = {
+      title: 'title',
+      description: 'description',
+      cyclesBudget: 'cycles_budget',
+      cyclesUsed: 'cycles_used',
+      phase: 'phase',
+      status: 'status',
+      verificationFeedback: 'verification_feedback',
+      examinationFeedback: 'examination_feedback',
+      completionMessage: 'completion_message',
+      completedAt: 'completed_at',
+    };
+    const sets = [];
+    const values = [];
+    for (const [key, column] of Object.entries(allowed)) {
+      if (!(key in patch)) continue;
+      sets.push(`${column} = ?`);
+      values.push(patch[key]);
+    }
+    if (sets.length === 0) return;
+    const db = this.getDb();
+    try {
+      db.prepare(`UPDATE milestones SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
+    } finally {
+      db.close();
+    }
+  }
+
+  getMilestones() {
+    const db = this.getDb();
+    try {
+      return db.prepare(`
+        SELECT id, title, description, cycles_budget as cyclesBudget, cycles_used as cyclesUsed,
+               phase, status, verification_feedback as verificationFeedback,
+               examination_feedback as examinationFeedback, completion_message as completionMessage,
+               created_at as createdAt, completed_at as completedAt
+        FROM milestones
+        ORDER BY id DESC
+      `).all();
+    } finally {
+      db.close();
+    }
   }
 
   async getComments(author, page = 1, perPage = 20) {
@@ -1069,6 +1136,7 @@ class ProjectRunner {
         ? Math.floor((Date.now() - this.currentAgentStartTime) / 1000)
         : null,
       activeAgents,
+      currentMilestoneId: this.currentMilestoneId,
       sleeping: this.sleepUntil !== null && !this.isPaused,
       sleepUntil: this.isPaused ? null : this.sleepUntil,
       schedule: this.currentSchedule || null,
@@ -1223,6 +1291,7 @@ class ProjectRunner {
         if (state.isPaused !== undefined) this.isPaused = state.isPaused;
         // Phase state
         this.phase = normalizePhaseName(state.phase || 'planning');
+        this.currentMilestoneId = state.currentMilestoneId || null;
         this.milestoneTitle = state.milestoneTitle || null;
         this.milestoneDescription = state.milestoneDescription || null;
         this.milestoneCyclesBudget = state.milestoneCyclesBudget || 0;
@@ -1261,6 +1330,7 @@ class ProjectRunner {
         currentSchedule: this.currentSchedule || null,
         isPaused: this.isPaused || false,
         phase: this.phase,
+        currentMilestoneId: this.currentMilestoneId,
         milestoneTitle: this.milestoneTitle,
         milestoneDescription: this.milestoneDescription,
         milestoneCyclesBudget: this.milestoneCyclesBudget,
@@ -1691,7 +1761,13 @@ class ProjectRunner {
             if (milestoneMatch) {
               try {
                 const milestone = JSON.parse(milestoneMatch[1]);
+                const milestoneId = this.createMilestoneRecord({
+                  title: milestone.title || milestone.description.slice(0, 80),
+                  description: milestone.description,
+                  cyclesBudget: milestone.cycles || 20,
+                });
                 this.setState({
+                  currentMilestoneId: milestoneId,
                   milestoneTitle: milestone.title || milestone.description.slice(0, 80),
                   milestoneDescription: milestone.description,
                   milestoneCyclesBudget: milestone.cycles || 20,
@@ -1778,7 +1854,14 @@ class ProjectRunner {
         // Check if deadline missed (before running)
         if (this.milestoneCyclesUsed >= this.milestoneCyclesBudget) {
           log(`⏰ Implementation deadline missed (${this.milestoneCyclesUsed}/${this.milestoneCyclesBudget} cycles)`, this.id);
-          this.setState({ phase: 'planning' });
+          this.updateMilestoneRecord(this.currentMilestoneId, {
+            status: 'failed',
+            phase: 'planning',
+            cyclesUsed: this.milestoneCyclesUsed,
+            completionMessage: 'Implementation deadline missed',
+            completedAt: new Date().toISOString(),
+          });
+          this.setState({ phase: 'planning', currentMilestoneId: null });
           continue;
         }
 
@@ -1819,6 +1902,11 @@ class ProjectRunner {
             // Check if PM claims milestone complete
             if (result.resultText.includes('<!-- CLAIM_COMPLETE -->')) {
               log(`🎯 PM claims milestone complete — switching to verification`, this.id);
+              this.updateMilestoneRecord(this.currentMilestoneId, {
+                status: 'verifying',
+                phase: 'verification',
+                cyclesUsed: this.milestoneCyclesUsed,
+              });
               this.setState({ phase: 'verification' });
               broadcastEvent({ type: 'phase', project: this.id, phase: 'verification', title: this.milestoneTitle });
             }
@@ -1840,6 +1928,7 @@ class ProjectRunner {
         // Only count cycle if at least one agent succeeded
         if (cycleTotal > 0 && cycleFailures < cycleTotal) {
           this.milestoneCyclesUsed++;
+          this.updateMilestoneRecord(this.currentMilestoneId, { cyclesUsed: this.milestoneCyclesUsed });
         } else if (cycleTotal > 0) {
           log(`All ${cycleTotal} agents failed — cycle not counted toward milestone budget`, this.id);
         }
@@ -1909,7 +1998,15 @@ class ProjectRunner {
             log(`✅ Milestone verified — waking producer for next milestone`, this.id);
             broadcastEvent({ type: 'verified', project: this.id, title: this.milestoneTitle });
             this.milestoneTitle = null;
+            this.updateMilestoneRecord(this.currentMilestoneId, {
+              status: 'completed',
+              phase: 'planning',
+              cyclesUsed: this.milestoneCyclesUsed,
+              verificationFeedback: '__passed__',
+              completedAt: new Date().toISOString(),
+            });
             this.setState({
+              currentMilestoneId: null,
               milestoneTitle: null,
               milestoneDescription: null,
               milestoneCyclesBudget: 0,
@@ -1922,6 +2019,13 @@ class ProjectRunner {
             log(`❌ Verification failed — returning to PM (${Math.floor(this.milestoneCyclesBudget / 2)} fix cycles)`, this.id);
             broadcastEvent({ type: 'verify-fail', project: this.id, title: this.milestoneTitle });
             const fixBudget = Math.floor(this.milestoneCyclesBudget / 2);
+            this.updateMilestoneRecord(this.currentMilestoneId, {
+              status: 'fixing',
+              phase: 'implementation',
+              cyclesBudget: this.milestoneCyclesUsed + fixBudget,
+              cyclesUsed: this.milestoneCyclesUsed,
+              verificationFeedback: this.verificationFeedback,
+            });
             this.setState({
               milestoneCyclesBudget: this.milestoneCyclesUsed + fixBudget,
               isFixRound: true,
@@ -3183,7 +3287,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const resolvedPath = projectPath.replace(/^~/, process.env.HOME);
+        const resolvedPath = projectPath.replace(/^~/, HOME_DIR);
 
         // Write spec.md if spec data provided
         if (spec && (spec.whatToBuild || spec.successCriteria)) {
@@ -3291,6 +3395,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && subPath === 'status') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(runner.getStatus()));
+      return;
+    }
+
+    if (req.method === 'GET' && subPath === 'milestones') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ milestones: runner.getMilestones() }));
       return;
     }
 
