@@ -1,5 +1,5 @@
 ---
-model: claude-opus-4-6
+model: mihoyo.claude-4-6-opus
 role: PM
 ---
 # PM
@@ -67,33 +67,33 @@ role: PM
 
 你需要根据职能合理分配模型，而不是让所有人都用同一个：
 
-- 主策 / 策划：默认优先 `gpt-5.4`；需要更强中文长文风格时再考虑 `Kimi-K2.5` 或 `deepseek-r1`
-- 主程 / 程序：默认优先 `gpt-5.4`；只有重代码生成、重 patch、重 review 时，才切 `gpt-5.3-codex`、`gpt-5.2-codex`、`claude-sonnet-4-6`
-- 主美 / 美术：默认优先 `gpt-5.4` 或 `claude-opus-4-6` 做方向判断；只有图像理解/生成时，才切 `Google/gemini-*`
+- 主策 / 策划：默认优先 `gpt-5.4`；需要更强中文长文风格时再考虑 `Kimi-K2.5` 或 `mihoyo-deepseek-v3.2-reasoner`
+- 主程 / 程序：默认优先 `gpt-5.4`；只有重代码生成、重 patch、重 review 时，才切 `gpt-5.3-codex`、`gpt-5.2-codex`、`mihoyo-glm-4.6`
+- 主美 / 美术：默认优先 `gpt-5.4` 或 `mihoyo.claude-4-6-opus` 做方向判断；只有图像理解/生成时，才切 `Google/gemini-*`
 - QA：默认优先 `gpt-5.4`；只有非常轻的回归清单才降到 `gpt-5-mini`
 
 如果当前 provider 是 MuseAI，优先根据任务类型分模型，不要只沿用默认档位。
 
 ### MuseAI 可用模型目录速查
 
-- **通用主力**：`gpt-5.4`、`claude-opus-4-6`、`claude-sonnet-4-6`
-- **代码主力**：`gpt-5.3-codex`、`gpt-5.2-codex`、`claude-sonnet-4-6`
+- **通用主力**：`gpt-5.4`、`mihoyo.claude-4-6-opus`、`mihoyo.claude-4-6-sonnet`
+- **代码主力**：`gpt-5.3-codex`、`gpt-5.2-codex`、`mihoyo-glm-4.6`
 - **轻量执行（仅必要时）**：`gpt-5-mini`、`gpt-5-nano`
-- **中文推理 / 需求拆解**：`deepseek-r1`、`deepseek-v3`
-- **高质量分析**：`claude-sonnet-4-6`、`claude-opus-4-6`、`gpt-5.4`
+- **中文推理 / 需求拆解**：`mihoyo-deepseek-v3.2-chat`、`mihoyo-deepseek-v3.2-reasoner`
+- **高质量分析**：`mihoyo.claude-4-6-sonnet`、`mihoyo.claude-4-6-opus`、`mihoyo.claude-4-5-sonnet-20250929-v1:0`
 - **视觉 / 图片理解**：`Google/gemini-3-pro-preview`、`Google/gemini-3.1-pro-preview`、`Google/gemini-3-flash-preview`
 - **图像生成 / 素材生成**：`Google/gemini-3-pro-image-preview`、`Google/gemini-3.1-flash-image-preview`
 
 ### 给不同岗位的推荐默认值
 
-- 执行制作人：`claude-sonnet-4-6` 或 `gpt-5.2`
-- 执行制作人：`claude-opus-4-6`，次选 `gpt-5.4`
+- 执行制作人：`mihoyo.claude-4-6-sonnet` 或 `gpt-5.2`
+- 执行制作人：`mihoyo.claude-4-6-opus`，次选 `gpt-5.4`
 - PM：`gpt-5.4`
-- 主策：`gpt-5.4`，次选 `claude-opus-4-6`
+- 主策：`gpt-5.4`，次选 `mihoyo.claude-4-6-opus`
 - 策划：`gpt-5.4`
 - 主程：`gpt-5.4`，代码重任务再切 `gpt-5.3-codex`
 - 程序：`gpt-5.4`
-- 主美：`claude-opus-4-6` 或 `gpt-5.4`，图像任务再切 Gemini
+- 主美：`mihoyo.claude-4-6-opus` 或 `gpt-5.4`，图像任务再切 Gemini
 - 美术：`gpt-5.4`，图像任务再切 Gemini
 - QA：`gpt-5.4`
 
