@@ -193,6 +193,23 @@ function getGlobalMcpCandidates() {
   return [...deduped.values()];
 }
 
+const GLOBAL_SETTINGS_PATH = path.join(TBC_HOME, 'settings.json');
+
+function loadGlobalSettings() {
+  try {
+    const raw = fs.readFileSync(GLOBAL_SETTINGS_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveGlobalSettings(settings) {
+  fs.mkdirSync(TBC_HOME, { recursive: true });
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(settings, null, 2));
+}
+
 // Model tier system — maps abstract tiers to provider-specific models
 const MODEL_TIERS = {
   anthropic: {
@@ -862,6 +879,8 @@ class ProjectRunner {
     const managerOverrides = Object.fromEntries(
       Object.entries(config.managers || {}).map(([name, overrides]) => [normalizeAgentName(name), overrides])
     );
+    const globalSettings = loadGlobalSettings();
+    const globalManagerDefaults = globalSettings.managerDefaults || {};
     const db = this.getDb();
     const getStoredAgent = db.prepare('SELECT name, role, reports_to as reportsTo, model FROM agents WHERE name = ?');
     const upsertAgentMeta = db.prepare(`
@@ -882,9 +901,9 @@ class ProjectRunner {
           // Disabled check: config override takes priority, then frontmatter
           const isDisabled = overrides.disabled !== undefined ? overrides.disabled : /^disabled:\s*true$/m.test(content);
           if (isDisabled) continue;
-          // Model: config override takes priority, then frontmatter
+          // Model: project override > global manager default > frontmatter
           const frontmatterModel = (content.match(/^model:\s*(.+)$/m) || [])[1]?.trim() || null;
-          const rawModel = overrides.model || frontmatterModel;
+          const rawModel = overrides.model || globalManagerDefaults[name] || frontmatterModel;
           managers.push({ name, role: parseRole(content), model: shortenModel(rawModel), rawModel, isManager: true });
         }
       }
@@ -999,6 +1018,10 @@ class ProjectRunner {
     const overrides = (isManager ? config.managers : config.workers) || {};
     const configModel = overrides[agentName]?.model || null;
     let model = configModel || frontmatterModel || null;
+    if (isManager && !configModel) {
+      const globalSettings = loadGlobalSettings();
+      model = globalSettings.managerDefaults?.[agentName] || model;
+    }
     if (!isManager) {
       try {
         const db = this.getDb();
@@ -3037,6 +3060,8 @@ const server = http.createServer(async (req, res) => {
     const openaiToken = process.env.OPENAI_API_KEY || null;
     const googleToken = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || null;
     const codexCreds = loadOAuthCredentials('openai-codex');
+    const globalSettings = loadGlobalSettings();
+    const modelCatalog = buildModelCatalog(getKeyPoolSafe());
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       // Backward compat fields
@@ -3051,7 +3076,34 @@ const server = http.createServer(async (req, res) => {
       },
       // New: key pool
       keyPool: getKeyPoolSafe(),
+      modelCatalog,
+      globalSettings,
     }));
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/settings/manager-models') {
+    if (!requireWrite(req, res)) return;
+    let body = '';
+    req.on('data', d => body += d);
+    req.on('end', () => {
+      try {
+        const { managerDefaults } = JSON.parse(body || '{}');
+        const current = loadGlobalSettings();
+        const cleaned = {};
+        for (const key of ['producer', 'pm', 'qa_lead', 'final_review']) {
+          const value = String(managerDefaults?.[key] || '').trim();
+          if (value) cleaned[key] = value;
+        }
+        current.managerDefaults = cleaned;
+        saveGlobalSettings(current);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, globalSettings: current }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
     return;
   }
 

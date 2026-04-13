@@ -131,8 +131,6 @@ function CustomCredentialFields({
   setDefaultModel,
   modelCatalogEntries,
   setModelCatalogEntries,
-  tierModels,
-  setTierModels,
   tokenLabel = 'API Key',
   tokenPlaceholder = '粘贴你的 API Key...',
 }) {
@@ -190,18 +188,6 @@ function CustomCredentialFields({
           onChange={setModelCatalogEntries}
         />
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        {['high', 'mid', 'low', 'xlow'].map(tier => (
-          <input
-            key={tier}
-            type="text"
-            placeholder={`${tier.toUpperCase()} 模型（可选）`}
-            value={tierModels[tier] || ''}
-            onChange={e => setTierModels(prev => ({ ...prev, [tier]: e.target.value }))}
-            className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200"
-          />
-        ))}
-      </div>
     </div>
   )
 }
@@ -218,12 +204,6 @@ function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel,
     label: m.label || m.id || m || '',
     tags: Array.isArray(m.tags) ? m.tags : [],
   })))
-  const [tierModels, setTierModels] = useState({
-    high: credential.customConfig?.tierModels?.high || '',
-    mid: credential.customConfig?.tierModels?.mid || '',
-    low: credential.customConfig?.tierModels?.low || '',
-    xlow: credential.customConfig?.tierModels?.xlow || '',
-  })
   const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
@@ -244,12 +224,6 @@ function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel,
         .filter(entry => entry.id)
         .map(entry => ({ id: entry.id, label: entry.label || entry.id, ...(entry.tags.length > 0 ? { tags: entry.tags } : {}) }))
       if (models.length > 0) customConfig.models = models
-      const trimmedTierModels = Object.fromEntries(
-        Object.entries(tierModels).filter(([, value]) => value.trim())
-      )
-      if (Object.keys(trimmedTierModels).length > 0) {
-        customConfig.tierModels = trimmedTierModels
-      }
       const body = {
         label,
         customConfig,
@@ -299,8 +273,6 @@ function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel,
           setDefaultModel={setDefaultModel}
           modelCatalogEntries={modelCatalogEntries}
           setModelCatalogEntries={setModelCatalogEntries}
-          tierModels={tierModels}
-          setTierModels={setTierModels}
           tokenLabel="替换用 API Key"
           tokenPlaceholder="替换 API Key（留空则保留当前值）"
         />
@@ -334,7 +306,6 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
   const [interfaceType, setInterfaceType] = useState('auto')
   const [defaultModel, setDefaultModel] = useState('')
   const [modelCatalogEntries, setModelCatalogEntries] = useState([])
-  const [tierModels, setTierModels] = useState({ high: '', mid: '', low: '', xlow: '' })
   const [label, setLabel] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -478,8 +449,6 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
               setDefaultModel={setDefaultModel}
               modelCatalogEntries={modelCatalogEntries}
               setModelCatalogEntries={setModelCatalogEntries}
-              tierModels={tierModels}
-              setTierModels={setTierModels}
             />
           ) : (
             <input
@@ -683,9 +652,6 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
               }))
               .filter(entry => entry.id)
               .map(entry => ({ id: entry.id, label: entry.label || entry.id, ...(entry.tags.length > 0 ? { tags: entry.tags } : {}) }))
-            const trimmedTierModels = Object.fromEntries(
-              Object.entries(tierModels).filter(([, value]) => value.trim())
-            )
             body.customConfig = {
               apiStyle,
               interfaceType,
@@ -693,9 +659,6 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
               defaultModel,
             }
             if (models.length > 0) body.customConfig.models = models
-            if (Object.keys(trimmedTierModels).length > 0) {
-              body.customConfig.tierModels = trimmedTierModels
-            }
           }
           const res = await authFetch('/api/keys', {
             method: 'POST',
@@ -793,6 +756,8 @@ export default function SettingsPanel({
 
   const [keys, setKeys] = useState([])
   const [allowCustomProvider, setAllowCustomProvider] = useState(true)
+  const [managerDefaults, setManagerDefaults] = useState({ producer: '', pm: '', qa_lead: '', final_review: '' })
+  const [globalModelCatalog, setGlobalModelCatalog] = useState({ byKey: [] })
   const [showWizard, setShowWizard] = useState(false)
   const [editingCustomKey, setEditingCustomKey] = useState(null)
   const [editingLabel, setEditingLabel] = useState(null)
@@ -802,6 +767,16 @@ export default function SettingsPanel({
     fetch('/api/keys').then(r => r.json()).then(d => {
       setKeys(d.keys || [])
       if (d.allowCustomProvider !== undefined) setAllowCustomProvider(d.allowCustomProvider)
+    }).catch(() => {})
+    fetch('/api/settings').then(r => r.json()).then(d => {
+      setGlobalModelCatalog(d.modelCatalog || { byKey: [] })
+      setManagerDefaults({
+        producer: d.globalSettings?.managerDefaults?.producer || '',
+        pm: d.globalSettings?.managerDefaults?.pm || '',
+        qa_lead: d.globalSettings?.managerDefaults?.qa_lead || '',
+        final_review: d.globalSettings?.managerDefaults?.final_review || '',
+      })
+      if (d.keyPool?.keys) setKeys(d.keyPool.keys)
     }).catch(() => {})
   }
 
@@ -873,6 +848,28 @@ export default function SettingsPanel({
 
   const notifSupported = typeof window !== 'undefined' && 'Notification' in window
   const notifPermission = notifSupported ? Notification.permission : 'default'
+  const managerModelOptions = (globalModelCatalog.byKey || []).flatMap(entry =>
+    (entry.models || []).map(model => ({
+      value: model.id,
+      label: `${entry.keyLabel} · ${model.name}${model.id !== model.name ? ` · ${model.id}` : ''}${model.tags?.length ? ` · ${model.tags.join(', ')}` : ''}`,
+    }))
+  )
+
+  const saveManagerDefaults = async (next) => {
+    setManagerDefaults(next)
+    try {
+      const res = await authFetch('/api/settings/manager-models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ managerDefaults: next })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '保存 manager 默认模型失败')
+      showToast('已保存 manager 默认模型')
+    } catch (e) {
+      showToast(e.message || '保存 manager 默认模型失败')
+    }
+  }
 
   return (
     <Panel id="settings" open={settingsOpen} onClose={onClose}>
@@ -944,6 +941,31 @@ export default function SettingsPanel({
             >
               <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${detailedNotifs ? 'translate-x-5' : ''}`} />
             </button>
+          </div>
+        </div>
+        <div className="border-t border-neutral-200 dark:border-neutral-700 pt-5 pb-5">
+          <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-3">Manager 默认模型</h3>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 mb-3">这里配置四个初始管理岗位的全局默认模型。优先级是：项目覆盖 &gt; 这里的全局默认值 &gt; 各自 frontmatter 默认值。</p>
+          <div className="space-y-3">
+            {[
+              ['producer', 'Producer'],
+              ['pm', 'PM'],
+              ['qa_lead', 'QA Lead'],
+              ['final_review', 'Final Review'],
+            ].map(([key, label]) => (
+              <div key={key} className="flex items-center gap-3">
+                <div className="w-28 shrink-0 text-sm text-neutral-700 dark:text-neutral-300">{label}</div>
+                <select
+                  value={managerDefaults[key] || ''}
+                  onChange={e => saveManagerDefaults({ ...managerDefaults, [key]: e.target.value })}
+                  className="flex-1 min-w-0 px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200"
+                >
+                  <option value="">跟随文件默认值</option>
+                  {managerModelOptions.map(option => <option key={`${key}-${option.value}`} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
+            ))}
+            {managerModelOptions.length === 0 && <p className="text-xs text-neutral-400 dark:text-neutral-500">当前还没有可用模型目录，请先配置并启用凭据。</p>}
           </div>
         </div>
         {/* Credentials Section */}
