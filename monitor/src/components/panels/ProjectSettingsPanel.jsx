@@ -32,6 +32,7 @@ export default function ProjectSettingsPanel({
   const [keySelection, setKeySelection] = useState(null)
   const [saving, setSaving] = useState(false)
   const [mcpServers, setMcpServers] = useState({})
+  const [discoveredMcp, setDiscoveredMcp] = useState([])
 
   useEffect(() => {
     if (!selectedProject) return
@@ -40,6 +41,9 @@ export default function ProjectSettingsPanel({
       setKeySelection(d.keySelection || null)
       setMcpServers(cloneMcpServers(d.config))
     }).catch(() => {})
+    fetch(`/api/mcp/discover?project=${encodeURIComponent(selectedProject.id)}`).then(r => r.json()).then(d => {
+      setDiscoveredMcp(d.candidates || [])
+    }).catch(() => setDiscoveredMcp([]))
   }, [selectedProject?.id, projectSettingsOpen])
 
   if (!selectedProject) return null
@@ -115,6 +119,28 @@ export default function ProjectSettingsPanel({
       setToast('MCP 设置已保存')
     } catch (e) {
       setToast(`保存 MCP 设置失败：${e.message}`)
+    }
+    setSaving(false)
+  }
+
+  const importMcpServers = async (names) => {
+    if (!Array.isArray(names) || names.length === 0) return
+    setSaving(true)
+    try {
+      const res = await authFetch(`/api/mcp/import?project=${encodeURIComponent(selectedProject.id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ names })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '导入 MCP 配置失败')
+      await fetchProjectData()
+      const configRes = await fetch(projectApi('/config'))
+      const configData = await configRes.json().catch(() => ({}))
+      setMcpServers(cloneMcpServers(configData.config))
+      setToast(`已导入 ${names.join(', ')}`)
+    } catch (e) {
+      setToast(e.message || '导入 MCP 配置失败')
     }
     setSaving(false)
   }
@@ -409,28 +435,66 @@ export default function ProjectSettingsPanel({
         <div className="border-t border-neutral-200 dark:border-neutral-700 pt-5 mt-5">
           <div className="flex items-center justify-between mb-3">
              <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">MCP 服务（项目级）</h3>
-            {isWriteMode && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={saving}
-                onClick={() => {
-                  let name = 'unity'
-                  let idx = 2
-                  while (mcpServers[name]) name = `unity${idx++}`
-                  const next = {
-                    ...mcpServers,
-                    [name]: { enabled: true, transport: 'http', url: 'http://127.0.0.1:8080', timeoutMs: 30000 }
-                  }
-                  setMcpServers(next)
-                  saveMcpServers(next)
-                }}
-              >
-                 添加服务
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {isWriteMode && discoveredMcp.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => importMcpServers(discoveredMcp.filter(item => !mcpServers[item.name]).map(item => item.name))}
+                >
+                  一键导入全局 MCP
+                </Button>
+              )}
+              {isWriteMode && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => {
+                    let name = 'unity'
+                    let idx = 2
+                    while (mcpServers[name]) name = `unity${idx++}`
+                    const next = {
+                      ...mcpServers,
+                      [name]: { enabled: true, transport: 'http', url: 'http://127.0.0.1:8080', timeoutMs: 30000 }
+                    }
+                    setMcpServers(next)
+                    saveMcpServers(next)
+                  }}
+                >
+                   添加服务
+                </Button>
+              )}
+            </div>
           </div>
           <div className="space-y-3">
+            {discoveredMcp.length > 0 && (
+              <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 p-3 bg-indigo-50/60 dark:bg-indigo-950/20">
+                <div className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-2">发现到的全局 MCP 配置</div>
+                <div className="space-y-2">
+                  {discoveredMcp.map(item => {
+                    const alreadyImported = !!mcpServers[item.name]
+                    return (
+                      <div key={`${item.source}-${item.name}-${item.filePath}`} className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm text-neutral-800 dark:text-neutral-200 flex items-center gap-2 flex-wrap">
+                            <span>{item.name}</span>
+                            <Badge variant="outline">{item.source}</Badge>
+                            <Badge variant={item.server.transport === 'stdio' ? 'secondary' : 'default'}>{item.server.transport}</Badge>
+                          </div>
+                          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">{item.server.url || item.server.command || item.filePath}</div>
+                        </div>
+                        {isWriteMode && !alreadyImported && (
+                          <Button variant="outline" size="sm" disabled={saving} onClick={() => importMcpServers([item.name])}>导入</Button>
+                        )}
+                        {alreadyImported && <Badge variant="success">已导入</Badge>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
             {Object.keys(mcpServers).length === 0 && (
                <p className="text-xs text-neutral-400 dark:text-neutral-500">当前项目还没有配置 MCP 服务。</p>
             )}

@@ -83,6 +83,116 @@ function isExplicitRateLimitMessage(message = '') {
   return /rate.limit|usage.limit|quota|too.many.requests|rate limit exceeded|429/i.test(String(message));
 }
 
+function normalizeImportedMcpServer(server = {}) {
+  const type = server.transport || server.type || (server.url ? 'http' : server.command ? 'stdio' : 'http');
+  if (type === 'remote') {
+    return {
+      enabled: server.enabled !== false,
+      transport: 'http',
+      url: server.url || '',
+      timeoutMs: Number(server.timeoutMs || 30000),
+      headers: server.headers || undefined,
+    };
+  }
+  if (type === 'stdio' || type === 'local') {
+    const command = Array.isArray(server.command) ? server.command[0] : server.command || '';
+    const args = Array.isArray(server.command) ? server.command.slice(1) : Array.isArray(server.args) ? server.args : [];
+    return {
+      enabled: server.enabled !== false && server.disabled !== true,
+      transport: 'stdio',
+      command,
+      args,
+      env: server.env || {},
+      timeoutMs: Number(server.timeoutMs || 30000),
+    };
+  }
+  return {
+    enabled: server.enabled !== false && server.disabled !== true,
+    transport: 'http',
+    url: server.url || '',
+    headers: server.headers || undefined,
+    timeoutMs: Number(server.timeoutMs || 30000),
+  };
+}
+
+function safeReadJson(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function collectMcpEntriesFromJson(filePath, payload, sourceLabel) {
+  if (!payload || typeof payload !== 'object') return [];
+  const buckets = [];
+  if (payload.mcpServers && typeof payload.mcpServers === 'object') buckets.push(payload.mcpServers);
+  if (payload.mcp && typeof payload.mcp === 'object') buckets.push(payload.mcp);
+  const looksLikeDirectMap = Object.values(payload).some(v => v && typeof v === 'object' && (v.url || v.command || v.args || v.type || v.transport));
+  if (looksLikeDirectMap) buckets.push(payload);
+  const entries = [];
+  for (const bucket of buckets) {
+    for (const [name, server] of Object.entries(bucket)) {
+      if (!server || typeof server !== 'object') continue;
+      if (!(server.url || server.command || server.args || server.type || server.transport)) continue;
+      entries.push({
+        name,
+        source: sourceLabel,
+        filePath,
+        server: normalizeImportedMcpServer(server),
+      });
+    }
+  }
+  return entries;
+}
+
+function getGlobalMcpCandidates() {
+  const candidates = [];
+  const pushEntries = (entries) => { for (const entry of entries) candidates.push(entry); };
+  const home = HOME_DIR;
+  const knownJsonFiles = [
+    { path: path.join(home, '.claude.json'), source: 'Claude Global' },
+    { path: path.join(home, '.kiro', 'settings', 'mcp.json'), source: 'Kiro Global' },
+    { path: path.join(home, '.config', 'opencode', 'opencode.json'), source: 'OpenCode Global' },
+    { path: path.join(home, '.gemini', 'settings.json'), source: 'Gemini Global' },
+  ];
+  for (const file of knownJsonFiles) {
+    if (!fs.existsSync(file.path)) continue;
+    pushEntries(collectMcpEntriesFromJson(file.path, safeReadJson(file.path), file.source));
+  }
+
+  const walkRoots = [
+    { root: path.join(home, '.claude'), source: 'Claude Plugin' },
+    { root: path.join(home, '.cursor'), source: 'Cursor Plugin' },
+  ];
+  const walk = (root, source) => {
+    if (!fs.existsSync(root)) return;
+    const stack = [root];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      let entries = [];
+      try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        const fullPath = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(fullPath);
+          continue;
+        }
+        if (!entry.isFile() || !entry.name.endsWith('.mcp.json')) continue;
+        pushEntries(collectMcpEntriesFromJson(fullPath, safeReadJson(fullPath), source));
+      }
+    }
+  };
+  for (const item of walkRoots) walk(item.root, item.source);
+
+  const deduped = new Map();
+  for (const entry of candidates) {
+    const key = `${entry.name}:${entry.server.transport}:${entry.server.url || entry.server.command || ''}`;
+    if (!deduped.has(key)) deduped.set(key, entry);
+  }
+  return [...deduped.values()];
+}
+
 // Model tier system — maps abstract tiers to provider-specific models
 const MODEL_TIERS = {
   anthropic: {
@@ -2823,6 +2933,60 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/mcp/discover') {
+    const projectId = url.searchParams.get('project') || null;
+    if (!projectId || !projects.has(projectId)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Project not found' }));
+      return;
+    }
+    const candidates = getGlobalMcpCandidates();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ candidates }));
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/mcp/import') {
+    if (!requireWrite(req, res)) return;
+    const projectId = url.searchParams.get('project') || null;
+    const runner = projectId ? projects.get(projectId) : null;
+    if (!runner) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Project not found' }));
+      return;
+    }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { names } = JSON.parse(body || '{}');
+        const selectedNames = Array.isArray(names) ? names.map(name => String(name || '').trim()).filter(Boolean) : [];
+        if (selectedNames.length === 0) throw new Error('No MCP servers selected for import');
+        const discovered = getGlobalMcpCandidates();
+        const picked = discovered.filter(entry => selectedNames.includes(entry.name));
+        if (picked.length === 0) throw new Error('Selected MCP servers were not found');
+        const config = runner.loadConfig();
+        const nextServers = { ...(config.mcp?.servers || {}) };
+        for (const entry of picked) {
+          nextServers[entry.name] = {
+            ...nextServers[entry.name],
+            ...entry.server,
+            importedFrom: entry.source,
+            importedPath: entry.filePath,
+          };
+        }
+        config.mcp = { ...(config.mcp || {}), servers: nextServers };
+        runner.saveConfig(yaml.dump(config, { lineWidth: -1 }));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, imported: picked.map(entry => ({ name: entry.name, source: entry.source })) }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   // --- Notifications API ---
   if (req.method === 'GET' && url.pathname === '/api/notifications') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3525,6 +3689,63 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const mcpDiscoverMatch = req.method === 'GET' && url.pathname.match(/^\/api\/projects\/(.+)\/mcp\/discover$/);
+  if (mcpDiscoverMatch) {
+    const projectId = decodeURIComponent(mcpDiscoverMatch[1]);
+    const runner = projects.get(projectId);
+    if (!runner) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Project not found' }));
+      return;
+    }
+    const candidates = getGlobalMcpCandidates();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ candidates }));
+    return;
+  }
+
+  const mcpImportMatch = req.method === 'POST' && url.pathname.match(/^\/api\/projects\/(.+)\/mcp\/import$/);
+  if (mcpImportMatch) {
+    if (!requireWrite(req, res)) return;
+    const projectId = decodeURIComponent(mcpImportMatch[1]);
+    const runner = projects.get(projectId);
+    if (!runner) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Project not found' }));
+      return;
+    }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { names } = JSON.parse(body || '{}');
+        const selectedNames = Array.isArray(names) ? names.map(name => String(name || '').trim()).filter(Boolean) : [];
+        if (selectedNames.length === 0) throw new Error('No MCP servers selected for import');
+        const discovered = getGlobalMcpCandidates();
+        const picked = discovered.filter(entry => selectedNames.includes(entry.name));
+        if (picked.length === 0) throw new Error('Selected MCP servers were not found');
+        const config = runner.loadConfig();
+        const nextServers = { ...(config.mcp?.servers || {}) };
+        for (const entry of picked) {
+          nextServers[entry.name] = {
+            ...nextServers[entry.name],
+            ...entry.server,
+            importedFrom: entry.source,
+            importedPath: entry.filePath,
+          };
+        }
+        config.mcp = { ...(config.mcp || {}), servers: nextServers };
+        runner.saveConfig(yaml.dump(config, { lineWidth: -1 }));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, imported: picked.map(entry => ({ name: entry.name, source: entry.source })) }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   // --- Project-scoped API ---
   // Support both single-segment (m2sim) and two-segment (sarchlab/m2sim) IDs
 
@@ -3751,6 +3972,51 @@ const server = http.createServer(async (req, res) => {
         keySelection,
         allowCustomProvider: ALLOW_CUSTOM_PROVIDER,
       }));
+      return;
+    }
+
+    // GET /api/projects/:id/mcp/discover — discover importable global MCP configs
+    if (req.method === 'GET' && subPath === 'mcp/discover') {
+      const candidates = getGlobalMcpCandidates();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ candidates }));
+      return;
+    }
+
+    // POST /api/projects/:id/mcp/import — import selected discovered MCP configs
+    if (req.method === 'POST' && subPath === 'mcp/import') {
+      if (!requireWrite(req, res)) return;
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        try {
+          const { names } = JSON.parse(body || '{}');
+          const selectedNames = Array.isArray(names) ? names.map(name => String(name || '').trim()).filter(Boolean) : [];
+          if (selectedNames.length === 0) throw new Error('No MCP servers selected for import');
+          const discovered = getGlobalMcpCandidates();
+          const picked = discovered.filter(entry => selectedNames.includes(entry.name));
+          if (picked.length === 0) throw new Error('Selected MCP servers were not found');
+
+          const config = runner.loadConfig();
+          const nextServers = { ...(config.mcp?.servers || {}) };
+          for (const entry of picked) {
+            nextServers[entry.name] = {
+              ...nextServers[entry.name],
+              ...entry.server,
+              importedFrom: entry.source,
+              importedPath: entry.filePath,
+            };
+          }
+          config.mcp = { ...(config.mcp || {}), servers: nextServers };
+          runner.saveConfig(yaml.dump(config, { lineWidth: -1 }));
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, imported: picked.map(entry => ({ name: entry.name, source: entry.source })) }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
       return;
     }
 

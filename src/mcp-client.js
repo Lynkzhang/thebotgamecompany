@@ -1,3 +1,5 @@
+import { spawn } from 'child_process';
+
 let nextRequestId = 1;
 
 function makeError(message) {
@@ -40,6 +42,9 @@ async function postJson(url, body, timeoutMs) {
 
 async function callJsonRpc(server, method, params = {}) {
   const timeoutMs = Math.min(Math.max(Number(server.timeoutMs || 30000), 1000), 120000);
+  if (server.transport === 'stdio') {
+    return await callJsonRpcStdio(server, method, params, timeoutMs);
+  }
   if (server.transport !== 'http') {
     throw makeError(`Unsupported MCP transport: ${server.transport}`);
   }
@@ -61,6 +66,101 @@ async function callJsonRpc(server, method, params = {}) {
   return data?.result ?? null;
 }
 
+function createJsonRpcFrame(payload) {
+  const body = Buffer.from(JSON.stringify(payload), 'utf8');
+  const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'utf8');
+  return Buffer.concat([header, body]);
+}
+
+function parseJsonRpcFrames(buffer) {
+  const messages = [];
+  let rest = buffer;
+  while (true) {
+    const headerEnd = rest.indexOf('\r\n\r\n');
+    if (headerEnd === -1) break;
+    const header = rest.slice(0, headerEnd);
+    const match = header.match(/Content-Length:\s*(\d+)/i);
+    if (!match) break;
+    const contentLength = Number(match[1]);
+    const bodyStart = headerEnd + 4;
+    if (rest.length < bodyStart + contentLength) break;
+    const body = rest.slice(bodyStart, bodyStart + contentLength);
+    try { messages.push(JSON.parse(body)); } catch {}
+    rest = rest.slice(bodyStart + contentLength);
+  }
+  return { messages, rest };
+}
+
+async function callJsonRpcStdio(server, method, params = {}, timeoutMs = 30000) {
+  if (!server.command) throw makeError('MCP stdio command is missing');
+  const child = spawn(server.command, server.args || [], {
+    env: { ...process.env, ...(server.env || {}) },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+
+  return await new Promise((resolve, reject) => {
+    const requestId = nextRequestId++;
+    const initId = nextRequestId++;
+    let stderr = '';
+    let stdoutBuffer = '';
+    let initialized = false;
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch {}
+      reject(makeError(`MCP request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    const cleanup = () => clearTimeout(timer);
+    const fail = (message) => {
+      cleanup();
+      try { child.kill(); } catch {}
+      reject(makeError(message));
+    };
+    const succeed = (result) => {
+      cleanup();
+      try { child.kill(); } catch {}
+      resolve(result);
+    };
+
+    child.on('error', err => fail(err.message));
+    child.stderr.on('data', chunk => { stderr += chunk.toString(); });
+    child.stdout.on('data', chunk => {
+      stdoutBuffer += chunk.toString();
+      const parsed = parseJsonRpcFrames(stdoutBuffer);
+      stdoutBuffer = parsed.rest;
+      for (const message of parsed.messages) {
+        if (message.id === initId) {
+          if (message.error) return fail(message.error.message || JSON.stringify(message.error));
+          initialized = true;
+          child.stdin.write(createJsonRpcFrame({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }));
+          child.stdin.write(createJsonRpcFrame({ jsonrpc: '2.0', id: requestId, method, params }));
+          continue;
+        }
+        if (message.id === requestId) {
+          if (message.error) return fail(message.error.message || JSON.stringify(message.error));
+          return succeed(message.result ?? null);
+        }
+      }
+    });
+    child.on('exit', code => {
+      if (!initialized) {
+        fail(stderr.trim() || `MCP stdio process exited (${code}) before initialization`);
+      }
+    });
+
+    child.stdin.write(createJsonRpcFrame({
+      jsonrpc: '2.0',
+      id: initId,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        clientInfo: { name: 'thebotgamecompany', version: '1.0.0' },
+        capabilities: {},
+      },
+    }));
+  });
+}
+
 export function listConfiguredMcpServers(projectConfig = {}) {
   const servers = projectConfig?.mcp?.servers || {};
   return Object.entries(servers)
@@ -69,6 +169,9 @@ export function listConfiguredMcpServers(projectConfig = {}) {
       name,
       transport: server.transport || 'http',
       url: server.url || null,
+      command: server.command || null,
+      args: Array.isArray(server.args) ? server.args : [],
+      env: server.env || {},
       timeoutMs: server.timeoutMs || 30000,
     }));
 }
