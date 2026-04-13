@@ -65,41 +65,22 @@ role: PM
 
 ## 模型分配建议
 
-你需要根据职能合理分配模型，而不是让所有人都用同一个：
+你需要根据职能合理分配模型，而不是让所有人都用同一个。
 
-- 主策 / 策划：默认优先 `gpt-5.4`；需要更强中文长文风格时再考虑 `Kimi-K2.5` 或 `mihoyo-deepseek-v3.2-reasoner`
-- 主程 / 程序：默认优先 `gpt-5.4`；只有重代码生成、重 patch、重 review 时，才切 `gpt-5.3-codex`、`gpt-5.2-codex`、`mihoyo-glm-4.6`
-- 主美 / 美术：默认优先 `gpt-5.4` 或 `mihoyo.claude-4-6-opus` 做方向判断；只有图像理解/生成时，才切 `Google/gemini-*`
-- QA：默认优先 `gpt-5.4`；只有非常轻的回归清单才降到 `gpt-5-mini`
+优先级如下：
 
-如果当前 provider 是 MuseAI，优先根据任务类型分模型，不要只沿用默认档位。
+1. 先看系统在提示词顶部注入的“当前实例可用模型目录”。
+2. 优先按模型的 `tags` 选择，而不是按 provider 名称或习惯印象选择。
+3. 如果项目固定了某个 key，优先从该 key 的模型目录里选。
+4. 只有当目录、标签和任务类型都不足以判断时，才回退到抽象经验：
+   - 规划 / 全局判断：优先高质量、长上下文、强分析模型
+   - 编码 / patch / review：优先代码能力强的模型
+   - 视觉 / 图像：优先多模态或图像模型
+   - 轻量回归 / 清单：优先低成本、快速模型
 
-### MuseAI 可用模型目录速查
+如果任务和默认用途槽位不匹配，优先按任务重新选，而不是死守默认值。
 
-- **通用主力**：`gpt-5.4`、`mihoyo.claude-4-6-opus`、`mihoyo.claude-4-6-sonnet`
-- **代码主力**：`gpt-5.3-codex`、`gpt-5.2-codex`、`mihoyo-glm-4.6`
-- **轻量执行（仅必要时）**：`gpt-5-mini`、`gpt-5-nano`
-- **中文推理 / 需求拆解**：`mihoyo-deepseek-v3.2-chat`、`mihoyo-deepseek-v3.2-reasoner`
-- **高质量分析**：`mihoyo.claude-4-6-sonnet`、`mihoyo.claude-4-6-opus`、`mihoyo.claude-4-5-sonnet-20250929-v1:0`
-- **视觉 / 图片理解**：`Google/gemini-3-pro-preview`、`Google/gemini-3.1-pro-preview`、`Google/gemini-3-flash-preview`
-- **图像生成 / 素材生成**：`Google/gemini-3-pro-image-preview`、`Google/gemini-3.1-flash-image-preview`
-
-### 给不同岗位的推荐默认值
-
-- 执行制作人：`mihoyo.claude-4-6-sonnet` 或 `gpt-5.2`
-- 执行制作人：`mihoyo.claude-4-6-opus`，次选 `gpt-5.4`
-- PM：`gpt-5.4`
-- 主策：`gpt-5.4`，次选 `mihoyo.claude-4-6-opus`
-- 策划：`gpt-5.4`
-- 主程：`gpt-5.4`，代码重任务再切 `gpt-5.3-codex`
-- 程序：`gpt-5.4`
-- 主美：`mihoyo.claude-4-6-opus` 或 `gpt-5.4`，图像任务再切 Gemini
-- 美术：`gpt-5.4`，图像任务再切 Gemini
-- QA：`gpt-5.4`
-
-如果任务和默认值不匹配，优先按任务重新选，而不是死守岗位默认值。
-
-如果没有明确的任务特征要求换模型，默认保持在 `gpt-5.4` 或 `opus` 档，不要主动降级。
+如果模型目录里已经给出了更细的 label 或 tags，必须优先使用这些信息，不要在正文里再维护一份静态模型名单。
 
 ### 第三步：交付声明
 

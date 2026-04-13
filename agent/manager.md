@@ -137,17 +137,6 @@ model: mid
 - **美术 / 主美**：默认优先 `gpt-5.4` 或 `high` 做方向判断；涉及图像理解或生成时，再切多模态模型
 - **QA**：默认也可直接用 `gpt-5.4`；只有非常轻的清单任务才考虑降档
 
-### MuseAI 模型目录参考
-
-如果当前 provider 是 MuseAI，可参考以下分配：
-
-- **全局规划 / 复杂分析**：`claude-sonnet-4-6`、`claude-opus-4-6`、`gpt-5.2`
-- **默认主力**：`gpt-5.4`、`claude-opus-4-6`、`claude-sonnet-4-6`
-- **仅在需要降成本时才用**：`gpt-5-mini`、`gpt-5-nano`
-- **代码强化**：`gpt-5.3-codex`、`gpt-5.2-codex`、`claude-sonnet-4-6`
-- **中文需求梳理 / 推理**：`deepseek-r1`、`deepseek-v3`
-- **视觉 / 图像类**：`Google/gemini-3.1-pro-preview`、`Google/gemini-3-flash-preview`、`Google/gemini-3-pro-image-preview`
-
 选择模型前先回答三个问题：
 - 这项工作更偏计划、表达、编码、验证，还是图像？
 - 需要高质量深思考，还是快速低成本吞吐？

@@ -736,6 +736,16 @@ class ProjectRunner {
     const managerOverrides = Object.fromEntries(
       Object.entries(config.managers || {}).map(([name, overrides]) => [normalizeAgentName(name), overrides])
     );
+    const db = this.getDb();
+    const getStoredAgent = db.prepare('SELECT name, role, reports_to as reportsTo, model FROM agents WHERE name = ?');
+    const upsertAgentMeta = db.prepare(`
+      INSERT INTO agents (name, role, reports_to, model)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(name) DO UPDATE SET
+        role = excluded.role,
+        reports_to = excluded.reports_to
+    `);
+    const updateStoredModel = db.prepare('UPDATE agents SET model = ? WHERE name = ?');
     
     if (fs.existsSync(managersDir)) {
       for (const file of fs.readdirSync(managersDir)) {
@@ -762,10 +772,20 @@ class ProjectRunner {
           const content = fs.readFileSync(path.join(workersDir, file), 'utf-8');
           if (/^disabled:\s*true$/m.test(content)) continue;
           const reportsTo = normalizeAgentName((content.match(/^reports_to:\s*(.+)$/m) || [])[1]?.trim() || null);
-          workers.push({ name, role: parseRole(content), model: parseModel(content), rawModel: (content.match(/^model:\s*(.+)$/m) || [])[1]?.trim() || null, isManager: false, reportsTo });
+          const role = parseRole(content);
+          const frontmatterModel = (content.match(/^model:\s*(.+)$/m) || [])[1]?.trim() || null;
+          const stored = getStoredAgent.get(name);
+          upsertAgentMeta.run(name, role, reportsTo, frontmatterModel);
+          let rawModel = stored?.model || frontmatterModel;
+          if (!stored?.model && frontmatterModel) {
+            updateStoredModel.run(frontmatterModel, name);
+            rawModel = frontmatterModel;
+          }
+          workers.push({ name, role, model: shortenModel(rawModel), rawModel, isManager: false, reportsTo });
         }
       }
     }
+    db.close();
     
     const costSummary = this.getCostSummary();
     for (const agent of [...managers, ...workers]) {
@@ -838,12 +858,20 @@ class ProjectRunner {
     // Extract model from frontmatter
     const modelMatch = skill.match(/^model:\s*(.+)$/m);
     const frontmatterModel = modelMatch ? modelMatch[1].trim() : null;
-    
+
     // Check config override (config.managers.<name>.model or config.workers.<name>.model)
     const config = this.loadConfig();
     const overrides = (isManager ? config.managers : config.workers) || {};
     const configModel = overrides[agentName]?.model || null;
-    const model = configModel || frontmatterModel || null;
+    let model = configModel || frontmatterModel || null;
+    if (!isManager) {
+      try {
+        const db = this.getDb();
+        const stored = db.prepare('SELECT model FROM agents WHERE name = ?').get(agentName);
+        db.close();
+        model = stored?.model || model;
+      } catch {}
+    }
     
     // Read shared rules: everyone.md + role-specific (worker.md or manager.md)
     let everyone = null;
@@ -3630,20 +3658,20 @@ const server = http.createServer(async (req, res) => {
             }
             fs.writeFileSync(runner.configPath, yaml.dump(config, { lineWidth: -1 }));
           } else {
-            // Worker settings go in the skill file frontmatter
+            // Worker model settings are user-owned; persist them in DB so PM edits to skill files don't overwrite model selection.
             const skillPath = path.join(workersDir, `${normalizedAgentName}.md`);
-            let content = fs.readFileSync(skillPath, 'utf-8');
-            if (content.startsWith('---')) {
-              if (model) {
-                content = content.replace(/^(---[\s\S]*?)model:\s*.+$/m, `$1model: ${model}`);
-                if (!content.match(/^model:/m)) {
-                  content = content.replace(/^---\n/, `---\nmodel: ${model}\n`);
-                }
-              }
-            } else {
-              content = `---\n${model ? `model: ${model}\n` : ''}---\n${content}`;
+            if (!fs.existsSync(skillPath)) {
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Agent not found' }));
+              return;
             }
-            fs.writeFileSync(skillPath, content);
+            const db = runner.getDb();
+            db.prepare(`
+              INSERT INTO agents (name, role, reports_to, model)
+              VALUES (?, NULL, NULL, ?)
+              ON CONFLICT(name) DO UPDATE SET model = excluded.model
+            `).run(normalizedAgentName, model || null);
+            db.close();
           }
           
           res.writeHead(200, { 'Content-Type': 'application/json' });

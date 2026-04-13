@@ -1,6 +1,7 @@
 import React from 'react'
-import { Sparkles, Users, PencilRuler, Code2, Palette, ShieldCheck, Boxes, StickyNote, MonitorSpeaker, Paintbrush, ClipboardCheck, Package2 } from 'lucide-react'
+import { Sparkles, Users, PencilRuler, Code2, Palette, ShieldCheck, Boxes, StickyNote, MonitorSpeaker, Paintbrush, ClipboardCheck, Package2, Info, Settings, Filter } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import WorkerCard from '@/components/project/WorkerCard'
 
 function classifyWorker(agent) {
@@ -30,6 +31,9 @@ const WORK_ZONES = {
     sectionClass: 'border-rose-100 dark:border-rose-400/10 bg-gradient-to-br from-white to-rose-50/65 dark:from-slate-900 dark:to-rose-950/10',
     cardClass: 'border-rose-100 dark:border-rose-400/10 bg-gradient-to-br from-white to-rose-50/55 dark:from-slate-900 dark:to-rose-950/10',
     iconClass: 'from-rose-400 to-pink-500',
+    deskClass: 'from-rose-200 to-pink-200 dark:from-rose-400/20 dark:to-pink-500/20',
+    screenClass: 'from-rose-500 to-pink-500',
+    chairClass: 'from-pink-300/80 to-rose-500/80 dark:from-pink-400/30 dark:to-rose-600/30',
   },
   engineering: {
     title: '程序',
@@ -39,6 +43,9 @@ const WORK_ZONES = {
     sectionClass: 'border-sky-100 dark:border-sky-400/10 bg-gradient-to-br from-white to-sky-50/65 dark:from-slate-900 dark:to-sky-950/10',
     cardClass: 'border-sky-100 dark:border-sky-400/10 bg-gradient-to-br from-white to-sky-50/55 dark:from-slate-900 dark:to-sky-950/10',
     iconClass: 'from-sky-400 to-indigo-500',
+    deskClass: 'from-sky-200 to-indigo-200 dark:from-sky-400/20 dark:to-indigo-500/20',
+    screenClass: 'from-slate-700 to-indigo-500',
+    chairClass: 'from-indigo-300/80 to-sky-500/80 dark:from-indigo-400/30 dark:to-sky-600/30',
   },
   art: {
     title: '美术',
@@ -48,6 +55,9 @@ const WORK_ZONES = {
     sectionClass: 'border-fuchsia-100 dark:border-fuchsia-400/10 bg-gradient-to-br from-white to-fuchsia-50/65 dark:from-slate-900 dark:to-fuchsia-950/10',
     cardClass: 'border-fuchsia-100 dark:border-fuchsia-400/10 bg-gradient-to-br from-white to-fuchsia-50/55 dark:from-slate-900 dark:to-fuchsia-950/10',
     iconClass: 'from-fuchsia-400 to-violet-500',
+    deskClass: 'from-fuchsia-200 to-violet-200 dark:from-fuchsia-400/20 dark:to-violet-500/20',
+    screenClass: 'from-fuchsia-500 to-violet-500',
+    chairClass: 'from-violet-300/80 to-fuchsia-500/80 dark:from-violet-400/30 dark:to-fuchsia-600/30',
   },
   qa: {
     title: 'QA',
@@ -57,6 +67,9 @@ const WORK_ZONES = {
     sectionClass: 'border-emerald-100 dark:border-emerald-400/10 bg-gradient-to-br from-white to-emerald-50/65 dark:from-slate-900 dark:to-emerald-950/10',
     cardClass: 'border-emerald-100 dark:border-emerald-400/10 bg-gradient-to-br from-white to-emerald-50/55 dark:from-slate-900 dark:to-emerald-950/10',
     iconClass: 'from-emerald-400 to-teal-500',
+    deskClass: 'from-emerald-200 to-teal-200 dark:from-emerald-400/20 dark:to-teal-500/20',
+    screenClass: 'from-emerald-500 to-teal-500',
+    chairClass: 'from-emerald-300/80 to-teal-500/80 dark:from-emerald-400/30 dark:to-teal-600/30',
   },
   ops: {
     title: '支援',
@@ -66,6 +79,9 @@ const WORK_ZONES = {
     sectionClass: 'border-amber-100 dark:border-amber-400/10 bg-gradient-to-br from-white to-amber-50/65 dark:from-slate-900 dark:to-amber-950/10',
     cardClass: 'border-amber-100 dark:border-amber-400/10 bg-gradient-to-br from-white to-amber-50/55 dark:from-slate-900 dark:to-amber-950/10',
     iconClass: 'from-amber-400 to-orange-500',
+    deskClass: 'from-amber-200 to-orange-200 dark:from-amber-400/20 dark:to-orange-500/20',
+    screenClass: 'from-amber-500 to-orange-500',
+    chairClass: 'from-amber-300/80 to-orange-500/80 dark:from-amber-400/30 dark:to-orange-600/30',
   },
 }
 
@@ -91,154 +107,210 @@ export default function StudioFloorCard({
     return acc
   }, { design: [], engineering: [], art: [], qa: [], ops: [] })
 
-  return (
-    <Card className="mb-4 overflow-hidden">
-      <CardHeader className="cute-panel-header min-h-[64px] border-b border-fuchsia-100/80 dark:border-white/8 justify-center">
-        <CardTitle className="flex items-center gap-2 text-neutral-800 dark:text-neutral-100">
-          <Sparkles className="w-4 h-4 text-fuchsia-500 dark:text-pink-300" />
-          办公区席位图
-          <span className="text-xs font-normal text-neutral-500 dark:text-neutral-400">管理岗位 {managers.length} · 执行岗位 {workers.length}</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-4 space-y-4">
-        <div className="rounded-[20px] border border-fuchsia-100 dark:border-white/10 bg-white/45 dark:bg-white/5 p-4 relative overflow-hidden">
-          <div className="absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-300/70 to-transparent dark:via-fuchsia-300/35" />
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-fuchsia-400 to-violet-500 flex items-center justify-center text-white shadow-sm">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Managers</div>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">更像靠窗会议区，负责规划、派工和验收收口</div>
-            </div>
+  const [mode, setMode] = React.useState(() => {
+    try { return localStorage.getItem('studio-floor-mode') || 'classic' } catch { return 'classic' }
+  })
+
+  React.useEffect(() => {
+    try { localStorage.setItem('studio-floor-mode', mode) } catch {}
+  }, [mode])
+
+  const SeatTile = ({ agent, zoneClass = '', deskClass = '', screenClass = '', chairClass = '', compact = false }) => {
+    const activeEntry = selectedProject?.activeAgents?.find?.(entry => entry.name === agent.name) || null
+    const isActive = !!activeEntry || selectedProject?.currentAgent === agent.name
+    const isSelected = selectedAgent === agent.name
+    const runtime = activeEntry?.runtime ?? (isActive ? selectedProject?.currentAgentRuntime : null)
+    const roleLabel = agent.role || 'agent'
+    return (
+      <div className={`relative rounded-[18px] border ${zoneClass} ${isActive ? 'seat-active' : ''} bg-white/70 dark:bg-white/5 p-2.5 overflow-hidden min-h-[124px]`}>
+        <div className="absolute top-2 right-2 flex items-center gap-1 z-10 opacity-80">
+          <button onClick={() => openAgentModal(agent.name)} className="p-1 rounded-full bg-white/80 dark:bg-white/10 hover:bg-white text-neutral-500 dark:text-neutral-300" title="查看 agent 详情"><Info className="w-3 h-3" /></button>
+          <button onClick={() => openAgentSettings(agent)} className="p-1 rounded-full bg-white/80 dark:bg-white/10 hover:bg-white text-neutral-500 dark:text-neutral-300" title="Agent 模型设置"><Settings className="w-3 h-3" /></button>
+          <button onClick={() => isSelected ? clearAgentFilter() : selectAgent(agent.name)} className={`p-1 rounded-full ${isSelected ? 'bg-fuchsia-100 dark:bg-fuchsia-900/50 text-fuchsia-700 dark:text-fuchsia-200' : 'bg-white/80 dark:bg-white/10 hover:bg-white text-neutral-500 dark:text-neutral-300'}`} title="按 agent 过滤报告"><Filter className="w-3 h-3" /></button>
+        </div>
+
+        <div className="pt-6 flex flex-col items-center text-center">
+          <div className="text-[13px] font-semibold text-neutral-800 dark:text-neutral-100 leading-tight line-clamp-1 max-w-full">{agent.name}</div>
+          <div className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-1 max-w-full">{roleLabel}</div>
+
+          <div className="relative mt-2.5 w-full max-w-[136px]">
+            <div className={`h-7 rounded-[12px] border border-white/70 dark:border-white/10 bg-gradient-to-b ${deskClass} shadow-[0_5px_12px_rgba(99,102,241,0.12)]`} />
+            <div className={`absolute left-1/2 top-1 -translate-x-1/2 h-3 w-12 rounded-md bg-gradient-to-r ${screenClass} shadow-sm ${isActive ? 'ring-2 ring-white/80 dark:ring-fuchsia-300/20 shadow-[0_0_16px_rgba(96,165,250,0.32)]' : ''}`} />
+            <div className="absolute left-3 top-4 h-1 w-7 rounded-full bg-white/70 dark:bg-white/10" />
+            <div className="absolute right-3 top-4 h-1 w-5 rounded-full bg-white/50 dark:bg-white/10" />
           </div>
-          <div className="space-y-3">
-            <div className="grid gap-3 lg:grid-cols-[1.25fr_1fr] items-start">
-              <div className="rounded-[22px] border border-fuchsia-200/80 dark:border-fuchsia-300/15 bg-gradient-to-br from-white via-fuchsia-50/70 to-violet-50/70 dark:from-slate-900 dark:via-fuchsia-950/10 dark:to-violet-950/10 p-3 min-h-[158px]">
+          <div className={`mt-1 h-3 w-8 rounded-b-full rounded-t-[8px] bg-gradient-to-b ${chairClass}`} />
+
+          <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1">
+            {agent.model && <span className="px-1.5 py-0.5 text-[10px] rounded-full border border-indigo-100 dark:border-indigo-300/10 bg-white/80 dark:bg-white/10 text-indigo-700 dark:text-indigo-200 max-w-full truncate">{agent.model}</span>}
+            {isActive && <span className="seat-lamp">✦ In Seat{runtime != null ? ` · ${Math.floor(runtime / 60)}m` : ''}</span>}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const renderClassicMode = () => (
+    <>
+      <div className="rounded-[20px] border border-fuchsia-100 dark:border-white/10 bg-white/45 dark:bg-white/5 p-4 relative overflow-hidden">
+        <div className="absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-300/70 to-transparent dark:via-fuchsia-300/35" />
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-fuchsia-400 to-violet-500 flex items-center justify-center text-white shadow-sm">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Managers</div>
+            <div className="text-xs text-neutral-500 dark:text-neutral-400">更像靠窗会议区，负责规划、派工和验收收口</div>
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div className="grid gap-3 lg:grid-cols-[1.25fr_1fr] items-start">
+            <div className="rounded-[22px] border border-fuchsia-200/80 dark:border-fuchsia-300/15 bg-gradient-to-br from-white via-fuchsia-50/70 to-violet-50/70 dark:from-slate-900 dark:via-fuchsia-950/10 dark:to-violet-950/10 p-3 min-h-[158px]">
                 <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-white/70 dark:bg-white/8 border border-fuchsia-100 dark:border-fuchsia-300/10 text-[11px] uppercase tracking-[0.22em] text-fuchsia-500 dark:text-fuchsia-300">
                   <span>主会议席</span>
                   <span className="text-xs">✦</span>
                 </div>
-                <div className="grid gap-3">
-                  {groupedManagers.producer.map((agent) => (
-                    <WorkerCard
-                      key={agent.name}
-                      agent={agent}
-                      isManager
-                      className="rounded-2xl border border-fuchsia-200/80 dark:border-fuchsia-300/15 bg-gradient-to-br from-white to-fuchsia-50/70 dark:from-slate-900 dark:to-fuchsia-950/10 shadow-sm p-3"
-                      selectedProject={selectedProject}
-                      selectedAgent={selectedAgent}
-                      openAgentModal={openAgentModal}
-                      openAgentSettings={openAgentSettings}
-                      selectAgent={selectAgent}
-                      clearAgentFilter={clearAgentFilter}
-                    />
-                  ))}
-                  {groupedManagers.producer.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">主会议席暂无负责人</p>}
-                </div>
-              </div>
-
-              <div className="rounded-[22px] border border-violet-100 dark:border-violet-300/10 bg-gradient-to-br from-white to-violet-50/65 dark:from-slate-900 dark:to-violet-950/10 p-3 min-h-[158px]">
-                <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-white/70 dark:bg-white/8 border border-violet-100 dark:border-violet-300/10 text-[11px] uppercase tracking-[0.22em] text-violet-500 dark:text-violet-300">
-                  <span>调度排班台</span>
-                  <span className="text-xs">✦</span>
-                </div>
-                <div className="grid gap-3">
-                  {groupedManagers.pm.map((agent) => (
-                    <WorkerCard
-                      key={agent.name}
-                      agent={agent}
-                      isManager
-                      className="rounded-2xl border border-violet-100 dark:border-violet-300/10 bg-gradient-to-br from-white to-violet-50/65 dark:from-slate-900 dark:to-violet-950/10 shadow-sm"
-                      selectedProject={selectedProject}
-                      selectedAgent={selectedAgent}
-                      openAgentModal={openAgentModal}
-                      openAgentSettings={openAgentSettings}
-                      selectAgent={selectAgent}
-                      clearAgentFilter={clearAgentFilter}
-                    />
-                  ))}
-                  {groupedManagers.pm.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">暂无 PM</p>}
-                </div>
+              <div className="grid gap-3">
+                {groupedManagers.producer.map((agent) => (
+                  <WorkerCard key={agent.name} agent={agent} isManager className="rounded-2xl border border-fuchsia-200/80 dark:border-fuchsia-300/15 bg-gradient-to-br from-white to-fuchsia-50/70 dark:from-slate-900 dark:to-fuchsia-950/10 shadow-sm p-3" selectedProject={selectedProject} selectedAgent={selectedAgent} openAgentModal={openAgentModal} openAgentSettings={openAgentSettings} selectAgent={selectAgent} clearAgentFilter={clearAgentFilter} />
+                ))}
+                {groupedManagers.producer.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">主会议席暂无负责人</p>}
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {[...groupedManagers.qa, ...groupedManagers.review, ...groupedManagers.other].map((agent) => (
-                <WorkerCard
-                  key={agent.name}
-                  agent={agent}
-                  isManager
-                  className="rounded-2xl border border-fuchsia-100 dark:border-fuchsia-400/10 bg-gradient-to-br from-white to-fuchsia-50/60 dark:from-slate-900 dark:to-fuchsia-950/10 shadow-sm"
-                  selectedProject={selectedProject}
-                  selectedAgent={selectedAgent}
-                  openAgentModal={openAgentModal}
-                  openAgentSettings={openAgentSettings}
-                  selectAgent={selectAgent}
-                  clearAgentFilter={clearAgentFilter}
-                />
-              ))}
+            <div className="rounded-[22px] border border-violet-100 dark:border-violet-300/10 bg-gradient-to-br from-white to-violet-50/65 dark:from-slate-900 dark:to-violet-950/10 p-3 min-h-[158px]">
+              <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-white/70 dark:bg-white/8 border border-violet-100 dark:border-violet-300/10 text-[11px] uppercase tracking-[0.22em] text-violet-500 dark:text-violet-300">
+                <span>调度排班台</span>
+                <span className="text-xs">✦</span>
+              </div>
+              <div className="grid gap-3">
+                {groupedManagers.pm.map((agent) => (
+                  <WorkerCard key={agent.name} agent={agent} isManager className="rounded-2xl border border-violet-100 dark:border-violet-300/10 bg-gradient-to-br from-white to-violet-50/65 dark:from-slate-900 dark:to-violet-950/10 shadow-sm" selectedProject={selectedProject} selectedAgent={selectedAgent} openAgentModal={openAgentModal} openAgentSettings={openAgentSettings} selectAgent={selectAgent} clearAgentFilter={clearAgentFilter} />
+                ))}
+                {groupedManagers.pm.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">暂无 PM</p>}
+              </div>
             </div>
+          </div>
 
-            {managers.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">暂无管理岗位</p>}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[...groupedManagers.qa, ...groupedManagers.review, ...groupedManagers.other].map((agent) => (
+              <WorkerCard key={agent.name} agent={agent} isManager className="rounded-2xl border border-fuchsia-100 dark:border-fuchsia-400/10 bg-gradient-to-br from-white to-fuchsia-50/60 dark:from-slate-900 dark:to-fuchsia-950/10 shadow-sm" selectedProject={selectedProject} selectedAgent={selectedAgent} openAgentModal={openAgentModal} openAgentSettings={openAgentSettings} selectAgent={selectAgent} clearAgentFilter={clearAgentFilter} />
+            ))}
+          </div>
+
+          {managers.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">暂无管理岗位</p>}
+        </div>
+      </div>
+
+      <div className="rounded-[24px] border border-sky-100 dark:border-white/10 bg-white/40 dark:bg-white/5 p-4 relative overflow-hidden">
+        <div className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/70 to-transparent dark:via-fuchsia-300/30" />
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white shadow-sm">
+            <Users className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Workers</div>
+            <div className="text-xs text-neutral-500 dark:text-neutral-400">像开放办公室，不同工种按桌组分区坐开，方便各自讨论也方便跨工种协作。</div>
           </div>
         </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          {Object.entries(WORK_ZONES).map(([zoneKey, zone]) => {
+            const zoneAgents = groupedWorkers[zoneKey]
+            const Icon = zone.icon
+            const PropIcon = zone.propIcon
+            return (
+              <div key={zoneKey} className={`rounded-[20px] border p-4 relative overflow-hidden ${zone.sectionClass}`}>
+                <div className="absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent dark:via-white/20" />
+                <div className="absolute right-4 top-4 opacity-20 dark:opacity-15"><PropIcon className="w-6 h-6 text-neutral-500 dark:text-neutral-300" /></div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${zone.iconClass} flex items-center justify-center text-white shadow-sm`}><Icon className="w-4 h-4" /></div>
+                  <div>
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 dark:bg-white/8 border border-white/70 dark:border-white/10 text-sm font-semibold text-neutral-800 dark:text-neutral-100"><span>{zone.title}</span><span className="text-xs opacity-70">✦</span></div>
+                    <div className="text-xs text-neutral-500 dark:text-neutral-400">{zone.description}</div>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.12fr_0.88fr]">
+                  {zoneAgents.map((agent, index) => (
+                    <WorkerCard key={agent.name} agent={agent} className={`rounded-2xl border shadow-sm ${zone.cardClass} ${index % 3 === 0 ? 'xl:translate-y-1' : index % 3 === 1 ? 'xl:-translate-y-1' : ''}`} selectedProject={selectedProject} selectedAgent={selectedAgent} openAgentModal={openAgentModal} openAgentSettings={openAgentSettings} selectAgent={selectAgent} clearAgentFilter={clearAgentFilter} />
+                  ))}
+                  {zoneAgents.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">该分区暂无席位</p>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </>
+  )
 
-        <div className="rounded-[24px] border border-sky-100 dark:border-white/10 bg-white/40 dark:bg-white/5 p-4 relative overflow-hidden">
-          <div className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/70 to-transparent dark:via-fuchsia-300/30" />
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white shadow-sm">
-              <Users className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Workers</div>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">像开放办公室，不同工种按桌组分区坐开，方便各自讨论也方便跨工种协作。</div>
+  const renderOfficeMode = () => (
+    <div className="rounded-[26px] border border-fuchsia-100 dark:border-white/10 bg-white/40 dark:bg-white/5 p-4 relative overflow-hidden">
+      <div className="absolute inset-0 opacity-60 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.18) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+      <div className="relative grid gap-4 xl:grid-cols-[1.1fr_1.9fr]">
+        <div className="rounded-[22px] border border-fuchsia-100/90 dark:border-fuchsia-300/10 bg-gradient-to-br from-white to-fuchsia-50/70 dark:from-slate-900 dark:to-fuchsia-950/10 p-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 dark:bg-white/8 border border-fuchsia-100 dark:border-fuchsia-300/10 text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-3">
+            Managers <span className="text-xs opacity-70">✦</span>
+          </div>
+          <div className="rounded-[24px] border border-fuchsia-100/80 dark:border-fuchsia-300/10 bg-white/50 dark:bg-white/5 p-4 relative overflow-hidden">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-2 relative">
+              {[...groupedManagers.producer, ...groupedManagers.pm, ...groupedManagers.qa, ...groupedManagers.review, ...groupedManagers.other].map((agent) => (
+                <SeatTile key={agent.name} agent={agent} zoneClass="border-fuchsia-100 dark:border-fuchsia-300/10" deskClass="from-fuchsia-100 to-violet-100 dark:from-fuchsia-400/18 dark:to-violet-500/18" screenClass="from-fuchsia-500 to-violet-500" chairClass="from-violet-300/80 to-fuchsia-500/80 dark:from-violet-400/30 dark:to-fuchsia-600/30" compact />
+              ))}
             </div>
           </div>
-          <div className="grid gap-4 xl:grid-cols-2">
+            {managers.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">暂无管理岗位</p>}
+        </div>
+
+        <div className="rounded-[22px] border border-sky-100/90 dark:border-sky-300/10 bg-gradient-to-br from-white to-sky-50/70 dark:from-slate-900 dark:to-sky-950/10 p-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 dark:bg-white/8 border border-sky-100 dark:border-sky-300/10 text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-3">
+            Workers <span className="text-xs opacity-70">✦</span>
+          </div>
+          <div className="space-y-4">
             {Object.entries(WORK_ZONES).map(([zoneKey, zone]) => {
               const zoneAgents = groupedWorkers[zoneKey]
               const Icon = zone.icon
-              const PropIcon = zone.propIcon
               return (
-                <div key={zoneKey} className={`rounded-[20px] border p-4 relative overflow-hidden ${zone.sectionClass}`}>
-                  <div className="absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent dark:via-white/20" />
-                  <div className="absolute right-4 top-4 opacity-20 dark:opacity-15">
-                    <PropIcon className="w-6 h-6 text-neutral-500 dark:text-neutral-300" />
-                  </div>
+                <div key={zoneKey} className={`rounded-[20px] border p-4 ${zone.sectionClass}`}>
                   <div className="flex items-center gap-2 mb-3">
-                    <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${zone.iconClass} flex items-center justify-center text-white shadow-sm`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 dark:bg-white/8 border border-white/70 dark:border-white/10 text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-                        <span>{zone.title}</span>
-                        <span className="text-xs opacity-70">✦</span>
-                      </div>
-                      <div className="text-xs text-neutral-500 dark:text-neutral-400">{zone.description}</div>
+                    <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${zone.iconClass} flex items-center justify-center text-white shadow-sm`}><Icon className="w-4 h-4" /></div>
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/75 dark:bg-white/8 border border-white/70 dark:border-white/10 text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+                      {zone.title}<span className="text-xs opacity-70">✦</span>
                     </div>
                   </div>
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.12fr_0.88fr]">
-                    {zoneAgents.map((agent, index) => (
-                      <WorkerCard
-                        key={agent.name}
-                        agent={agent}
-                        className={`rounded-2xl border shadow-sm ${zone.cardClass} ${index % 3 === 0 ? 'xl:translate-y-1' : index % 3 === 1 ? 'xl:-translate-y-1' : ''}`}
-                        selectedProject={selectedProject}
-                        selectedAgent={selectedAgent}
-                        openAgentModal={openAgentModal}
-                        openAgentSettings={openAgentSettings}
-                        selectAgent={selectAgent}
-                        clearAgentFilter={clearAgentFilter}
-                      />
-                    ))}
+                  <div className="relative">
+                    <div className="absolute left-[33%] top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/70 to-transparent dark:via-white/12" />
+                    <div className="absolute left-[66%] top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/70 to-transparent dark:via-white/12" />
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {zoneAgents.map(agent => <SeatTile key={agent.name} agent={agent} zoneClass={zone.cardClass} deskClass={zone.deskClass} screenClass={zone.screenClass} chairClass={zone.chairClass} />)}
                     {zoneAgents.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">该分区暂无席位</p>}
+                    </div>
                   </div>
                 </div>
               )
             })}
           </div>
         </div>
+      </div>
+    </div>
+  )
+
+  return (
+    <Card className="mb-4 overflow-hidden">
+      <CardHeader className="cute-panel-header min-h-[64px] border-b border-fuchsia-100/80 dark:border-white/8 justify-center">
+        <CardTitle className="flex items-center justify-between gap-3 text-neutral-800 dark:text-neutral-100">
+          <span className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-fuchsia-500 dark:text-pink-300" />
+            办公区席位图
+            <span className="text-xs font-normal text-neutral-500 dark:text-neutral-400">管理岗位 {managers.length} · 执行岗位 {workers.length}</span>
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant={mode === 'classic' ? 'default' : 'outline'} onClick={() => setMode('classic')}>经典模式</Button>
+            <Button size="sm" variant={mode === 'office' ? 'default' : 'outline'} onClick={() => setMode('office')}>工位模式</Button>
+          </div>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-4 space-y-4">
+        {mode === 'office' ? renderOfficeMode() : renderClassicMode()}
       </CardContent>
     </Card>
   )
