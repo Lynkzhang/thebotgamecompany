@@ -6,6 +6,7 @@ import { getAgentTask } from '@/components/ScheduleDiagram'
 export default function WorkerCard({
   agent,
   isManager = false,
+  className = '',
   selectedProject,
   selectedAgent,
   openAgentModal,
@@ -28,10 +29,10 @@ export default function WorkerCard({
   }
 
   return (
-    <div className="p-2 rounded bg-neutral-50 dark:bg-neutral-900">
+    <div className={`p-2 rounded bg-neutral-50 dark:bg-neutral-900 ${isActive ? 'seat-active' : ''} ${className}`}>
       {/* Row 1: Name + action buttons */}
       <div className="flex items-center justify-between">
-        <span className="font-medium text-neutral-800 dark:text-neutral-100 capitalize">
+        <span className="font-medium text-neutral-800 dark:text-neutral-100 capitalize leading-tight">
           {agent.name}
           {agent.role && <span className="text-xs font-normal text-neutral-500 dark:text-neutral-400 ml-1.5">({agent.role})</span>}
           {agent.reportsTo && <span className="text-xs font-normal text-neutral-400 dark:text-neutral-500 ml-1.5">→ {agent.reportsTo}</span>}
@@ -70,12 +71,13 @@ export default function WorkerCard({
       {task && <p className="text-xs text-blue-500 dark:text-blue-400 mt-0.5 italic">{task}</p>}
       {/* Pills */}
       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-        {agent.model && <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs rounded-full">{agent.model}</span>}
+        {agent.model && <span className="px-2 py-0.5 bg-white/80 dark:bg-white/10 text-indigo-700 dark:text-indigo-200 text-xs rounded-full border border-indigo-100 dark:border-indigo-300/10 shadow-sm">{agent.model}</span>}
         {isActive && (
           <Badge variant="success" className="flex items-center gap-1">
             Active{runtime !== null && <span className="font-mono">{formatRuntime(runtime)}</span>}
           </Badge>
         )}
+        {isActive && <span className="seat-lamp">✦ In Seat</span>}
       </div>
       {/* Cost metrics */}
       {(agent.totalCost > 0 || agent.lastCallCost > 0) && (

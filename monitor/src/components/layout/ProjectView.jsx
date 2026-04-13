@@ -9,6 +9,7 @@ import { PanelSlot, closeAllPanels } from '@/components/ui/panel'
 import Footer from '@/components/layout/Footer'
 import { OrchestratorStateCard, CostBudgetCard } from '@/components/project/OrchestratorState'
 import WorkerCard from '@/components/project/WorkerCard'
+import StudioFloorCard from '@/components/project/StudioFloorCard'
 import MilestonesCard from '@/components/project/MilestonesCard'
 import IssuesSidebar from '@/components/project/IssuesSidebar'
 import HumanInterventionCard from '@/components/project/HumanInterventionCard'
@@ -580,8 +581,8 @@ export default function ProjectView({
   if (!selectedProject) return null
 
   return (
-    <div className="flex h-screen overflow-hidden">
-    <div className="flex-1 min-w-0 bg-neutral-50 dark:bg-neutral-950 p-6 max-w-screen-2xl mx-auto overflow-y-auto">
+    <div className="flex h-screen overflow-hidden shell-backdrop">
+    <div className="flex-1 min-w-0 bg-transparent p-6 max-w-screen-2xl mx-auto overflow-y-auto">
       <div>
         {/* Header */}
         <div className="mb-6 space-y-3">
@@ -591,7 +592,10 @@ export default function ProjectView({
                 <ArrowLeft className="w-4 h-4" />
                 <span className="hidden sm:inline ml-1">全部项目</span>
               </Button>
-              <h1 className="text-lg sm:text-2xl font-bold text-neutral-800 dark:text-neutral-100 truncate">{selectedProject.id}</h1>
+              <div>
+                <div className="section-kicker mb-1">Project Command Deck</div>
+                <h1 className="text-lg sm:text-2xl font-black tracking-tight truncate"><span className="title-gradient">{selectedProject.id}</span></h1>
+              </div>
             </div>
             
             <div className="flex items-center gap-1.5 pl-8 sm:pl-0 shrink-0">
@@ -685,7 +689,7 @@ export default function ProjectView({
           <>
             {/* Phase Indicator */}
             {selectedProject.phase && (
-              <div className="mb-4 p-4 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700">
+              <div className="mb-4 p-4 rounded-2xl panel-sheen border border-white/60 dark:border-white/10 shadow-[0_14px_34px_rgba(99,102,241,0.1)]">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-lg">
                     {selectedProject.phase === 'planning' ? '🧠' : selectedProject.phase === 'implementation' ? '🔨' : selectedProject.phase === 'verification' ? '✅' : '❓'}
@@ -727,6 +731,17 @@ export default function ProjectView({
             )}
 
             {/* Row 1: State, Cost & Budget, Config */}
+            <StudioFloorCard
+              managers={agents.managers}
+              workers={agents.workers}
+              selectedProject={selectedProject}
+              selectedAgent={selectedAgent}
+              openAgentModal={openAgentModal}
+              openAgentSettings={openAgentSettings}
+              selectAgent={selectAgentFilter}
+              clearAgentFilter={clearAgentFilter}
+            />
+
             <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
               <OrchestratorStateCard
                 selectedProject={selectedProject}
@@ -778,43 +793,6 @@ export default function ProjectView({
                 currentMilestoneId={selectedProject.currentMilestoneId}
                 onOpenMilestone={(milestone) => setMilestoneModal({ open: true, milestone })}
               />
-
-              <DashboardWidget icon={Sparkles} title={`管理岗位（${agents.managers.length}）`}>
-                  <div className="space-y-2">
-                    {agents.managers.map((agent) => (
-                      <WorkerCard
-                        key={agent.name}
-                        agent={agent}
-                        isManager
-                        selectedProject={selectedProject}
-                        selectedAgent={selectedAgent}
-                        openAgentModal={openAgentModal}
-                        openAgentSettings={openAgentSettings}
-                        selectAgent={selectAgentFilter}
-                        clearAgentFilter={clearAgentFilter}
-                      />
-                    ))}
-                    {agents.managers.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">暂无管理岗位</p>}
-                  </div>
-              </DashboardWidget>
-
-              <DashboardWidget icon={Users} title={`执行岗位（${agents.workers.length}）`}>
-                  <div className="space-y-2">
-                    {agents.workers.map((agent) => (
-                      <WorkerCard
-                        key={agent.name}
-                        agent={agent}
-                        selectedProject={selectedProject}
-                        selectedAgent={selectedAgent}
-                        openAgentModal={openAgentModal}
-                        openAgentSettings={openAgentSettings}
-                        selectAgent={selectAgentFilter}
-                        clearAgentFilter={clearAgentFilter}
-                      />
-                    ))}
-                    {agents.workers.length === 0 && <p className="text-sm text-neutral-400 dark:text-neutral-500">暂无执行岗位</p>}
-                  </div>
-              </DashboardWidget>
 
               <AgentReportsCard
                 comments={comments}

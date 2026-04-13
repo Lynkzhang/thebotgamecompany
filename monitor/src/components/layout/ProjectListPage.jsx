@@ -168,14 +168,15 @@ export default function ProjectListPage({
   }
 
   return (
-    <div className="flex min-h-screen">
-    <div className="flex-1 min-w-0 bg-neutral-50 dark:bg-neutral-950 p-6">
+    <div className="flex min-h-screen shell-backdrop">
+    <div className="flex-1 min-w-0 bg-transparent p-6">
       <div className="max-w-4xl mx-auto">
         <div className="mb-6 sm:mb-8">
           <div className="flex items-start sm:items-center justify-between gap-2">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-neutral-800 dark:text-neutral-100">TheBotGameCompany</h1>
-              <p className="text-neutral-500 dark:text-neutral-400 text-sm mt-1 hidden sm:block">面向游戏团队的多项目 AI 编排器</p>
+              <div className="section-kicker mb-2">Game Studio Control Room</div>
+              <h1 className="text-3xl sm:text-4xl font-black tracking-tight title-gradient">TheBotGameCompany</h1>
+              <p className="text-neutral-600 dark:text-neutral-300 text-sm mt-2 hidden sm:block">面向游戏团队的多项目 AI 编排器</p>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -221,11 +222,11 @@ export default function ProjectListPage({
         )}
         <div className="space-y-4">
           {projects.filter(p => showArchived || !p.archived).map(project => (
-            <Card key={project.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => selectProject(project)}>
+            <Card key={project.id} className="hover:-translate-y-0.5 hover:shadow-[0_18px_44px_rgba(99,102,241,0.2)] dark:hover:shadow-[0_20px_54px_rgba(76,29,149,0.28)] transition-all cursor-pointer" onClick={() => selectProject(project)}>
               <CardContent className="p-4">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-400 to-purple-500 rounded-lg flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-fuchsia-500 via-violet-500 to-sky-500 rounded-2xl flex items-center justify-center shrink-0 shadow-[0_10px_25px_rgba(99,102,241,0.35)]">
                       <Folder className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                     </div>
                     <div className="min-w-0 flex-1">

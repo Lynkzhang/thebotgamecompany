@@ -110,7 +110,7 @@ function Panel({ open, onClose, children, id: propId }) {
           onClick={onClose}
         />
         <div
-          className={`fixed inset-0 bg-white dark:bg-neutral-800 flex flex-col overflow-hidden overscroll-contain transition-transform duration-300 ease-in-out ${
+          className={`fixed inset-0 panel-sheen flex flex-col overflow-hidden overscroll-contain transition-transform duration-300 ease-in-out ${
             shouldAnimate ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
@@ -122,9 +122,9 @@ function Panel({ open, onClose, children, id: propId }) {
 
   // Desktop: portal into PanelSlot
   const desktopContent = _slotRef ? createPortal(
-    <div className="hidden md:flex md:flex-col w-full h-full overflow-hidden overscroll-contain">
-      {children}
-    </div>,
+      <div className="hidden md:flex md:flex-col w-full h-full overflow-hidden overscroll-contain panel-sheen">
+        {children}
+      </div>,
     _slotRef
   ) : null
 
@@ -153,7 +153,7 @@ function PanelSlot() {
   return (
     <div
       ref={ref}
-      className={`hidden md:block shrink-0 border-l border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 overflow-hidden h-screen sticky top-0 transition-[width] duration-300 ease-in-out ${
+      className={`hidden md:block shrink-0 border-l border-fuchsia-100/80 dark:border-white/8 bg-transparent overflow-hidden h-screen sticky top-0 transition-[width] duration-300 ease-in-out ${
         renderedId && shouldAnimate ? 'w-[min(35vw,560px)] min-w-[380px]' : 'w-0'
       }`}
     />

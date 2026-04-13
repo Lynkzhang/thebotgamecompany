@@ -7,14 +7,14 @@ function Button({
   children, 
   ...props 
 }) {
-  const baseStyles = "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+  const baseStyles = "inline-flex items-center justify-center rounded-full font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
   
   const variants = {
-    default: "bg-neutral-900 dark:bg-neutral-100 text-neutral-50 dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200",
-    outline: "border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-900 dark:text-neutral-100",
-    destructive: "bg-red-500 text-white hover:bg-red-600",
-    warning: "bg-amber-500 text-white hover:bg-amber-600",
-    ghost: "hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-900 dark:text-neutral-100",
+    default: "bg-gradient-to-r from-fuchsia-500 via-violet-500 to-sky-500 text-white hover:brightness-105 shadow-[0_10px_24px_rgba(139,92,246,0.26)]",
+    outline: "border border-fuchsia-100 dark:border-white/10 bg-white/80 dark:bg-white/5 hover:bg-fuchsia-50 dark:hover:bg-white/10 text-neutral-900 dark:text-neutral-100",
+    destructive: "bg-gradient-to-r from-rose-500 to-red-500 text-white hover:brightness-105",
+    warning: "bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:brightness-105",
+    ghost: "hover:bg-fuchsia-50 dark:hover:bg-white/8 text-neutral-900 dark:text-neutral-100",
   }
   
   const sizes = {
