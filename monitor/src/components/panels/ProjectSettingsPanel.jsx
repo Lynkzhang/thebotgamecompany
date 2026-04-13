@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Info } from 'lucide-react'
 import { Panel, PanelHeader, PanelContent } from '@/components/ui/panel'
 import yaml from 'js-yaml'
@@ -34,13 +35,12 @@ export default function ProjectSettingsPanel({
 
   useEffect(() => {
     if (!selectedProject) return
-    // Fetch key pool and project key selection
-    fetch('/api/keys').then(r => r.json()).then(d => setKeys(d.keys || [])).catch(() => {})
     fetch(projectApi('/config')).then(r => r.json()).then(d => {
+      setKeys(d.keyPool?.keys || [])
       setKeySelection(d.keySelection || null)
       setMcpServers(cloneMcpServers(d.config))
     }).catch(() => {})
-  }, [selectedProject?.id])
+  }, [selectedProject?.id, projectSettingsOpen])
 
   if (!selectedProject) return null
 
@@ -51,44 +51,47 @@ export default function ProjectSettingsPanel({
   // Detect stale pinned key (disabled or deleted)
   const pinnedKeyStale = selectedKeyId && (!selectedKey || !selectedKey.enabled)
   const effectiveKey = (selectedKey && selectedKey.enabled) ? selectedKey : defaultKey
+  const effectiveKeyMissing = !effectiveKey
+  const effectiveKeyRateLimited = !!effectiveKey?.rateLimited
 
-  const handleKeyChange = async (keyId) => {
+  const saveKeySelection = async ({ keyId, fallback, successMessage }) => {
     setSaving(true)
     try {
       const res = await authFetch(projectApi('/token'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          keyId: keyId || null,
-          fallback: fallbackEnabled,
-        })
-      })
-      if (res.ok) {
-        const d = await res.json()
-        setKeySelection(d.keySelection || null)
-        setToast(keyId ? '已更新 Key 选择' : '已切回全局默认值')
-      }
-    } catch {}
-    setSaving(false)
-  }
-
-  const handleFallbackChange = async (fallback) => {
-    setSaving(true)
-    try {
-      const res = await authFetch(projectApi('/token'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          keyId: selectedKeyId,
+          keyId: keyId ?? null,
           fallback,
         })
       })
-      if (res.ok) {
-        const d = await res.json()
-        setKeySelection(d.keySelection || null)
-      }
-    } catch {}
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '保存项目凭据设置失败')
+      setKeySelection(data.keySelection || null)
+      const configRes = await fetch(projectApi('/config'))
+      const configData = await configRes.json().catch(() => ({}))
+      setKeys(configData.keyPool?.keys || [])
+      if (successMessage) setToast(successMessage)
+    } catch (e) {
+      setToast(e.message || '保存项目凭据设置失败')
+    }
     setSaving(false)
+  }
+
+  const handleKeyChange = async (keyId) => {
+    await saveKeySelection({
+      keyId: keyId || null,
+      fallback: fallbackEnabled,
+      successMessage: keyId ? '已更新项目绑定凭据' : '已切回全局默认凭据'
+    })
+  }
+
+  const handleFallbackChange = async (fallback) => {
+    await saveKeySelection({
+      keyId: selectedKeyId,
+      fallback,
+      successMessage: fallback ? '已开启凭据回退' : '已关闭凭据回退'
+    })
   }
 
   const saveMcpServers = async (nextServers) => {
@@ -177,33 +180,80 @@ export default function ProjectSettingsPanel({
           </div>
 
           <div className="space-y-3">
-            {/* Key selector */}
-            <select
-              value={selectedKeyId || ''}
-              onChange={e => handleKeyChange(e.target.value || null)}
-              disabled={saving}
-              className={`w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 ${pinnedKeyStale ? 'border-red-400 dark:border-red-600' : 'border-neutral-300 dark:border-neutral-600'}`}
-            >
-              <option value="">
-                使用全局默认值{defaultKey ? `（"${defaultKey.label}"）` : ''}
-              </option>
-              {pinnedKeyStale && (
-                <option value={selectedKeyId} disabled>
-                  ⚠️ {selectedKey ? selectedKey.label : selectedKeyId.slice(0, 8)} — 已禁用 / 不可用
-                </option>
+            <div className="p-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/40">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">当前项目凭据策略</span>
+                {selectedKeyId ? <Badge variant="secondary">固定项目凭据</Badge> : <Badge variant="outline">使用全局默认</Badge>}
+                {effectiveKeyRateLimited && <Badge variant="warning">Rate limited</Badge>}
+              </div>
+              <div className="text-sm text-neutral-700 dark:text-neutral-300">
+                {effectiveKeyMissing
+                  ? '当前没有任何可用凭据。请先到全局设置添加凭据。'
+                  : selectedKeyId
+                    ? `当前项目固定使用 ${selectedKey?.label || selectedKeyId}。`
+                    : `当前项目跟随全局默认凭据：${effectiveKey.label}。`}
+              </div>
+              {selectedKeyId && !pinnedKeyStale && (
+                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                  如果这个固定凭据失效、被禁用或触发限流，项目可能无法运行。你可以切回“使用全局默认值”。
+                </div>
               )}
-              {keys.filter(k => k.enabled).map(k => (
-                <option key={k.id} value={k.id}>
-                  {k.label} — {k.provider} ({k.preview})
-                </option>
-              ))}
-            </select>
+              <div className="flex gap-2 mt-3">
+                <Button
+                  size="sm"
+                  variant={selectedKeyId ? 'outline' : 'default'}
+                  onClick={() => handleKeyChange(null)}
+                  disabled={saving || !defaultKey}
+                >
+                  跟随全局默认
+                </Button>
+                <Button
+                  size="sm"
+                  variant={selectedKeyId ? 'default' : 'outline'}
+                  disabled={saving || keys.filter(k => k.enabled).length === 0}
+                  onClick={() => {
+                    if (!selectedKeyId) {
+                      const preferred = defaultKey?.id || keys.find(k => k.enabled)?.id || null
+                      if (preferred) handleKeyChange(preferred)
+                    }
+                  }}
+                >
+                  固定项目凭据
+                </Button>
+              </div>
+            </div>
+
+            {/* Key selector */}
+            {selectedKeyId ? (
+              <select
+                value={selectedKeyId || ''}
+                onChange={e => handleKeyChange(e.target.value || null)}
+                disabled={saving}
+                className={`w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 ${pinnedKeyStale ? 'border-red-400 dark:border-red-600' : 'border-neutral-300 dark:border-neutral-600'}`}
+              >
+                {pinnedKeyStale && (
+                  <option value={selectedKeyId} disabled>
+                    ⚠️ {selectedKey ? selectedKey.label : selectedKeyId.slice(0, 8)} — 已禁用 / 不可用
+                  </option>
+                )}
+                {keys.filter(k => k.enabled).map(k => (
+                  <option key={k.id} value={k.id}>
+                    {k.label} — {k.provider} ({k.preview})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="p-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm text-neutral-700 dark:text-neutral-300">
+                当前不固定项目凭据，运行时始终使用全局列表中排在最前且可用的 key。
+              </div>
+            )}
 
             {pinnedKeyStale && (
               <div className="flex items-center gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
-                <span className="text-xs text-red-600 dark:text-red-400">
+                <span className="text-xs text-red-600 dark:text-red-400 flex-1">
                   ⚠️ 当前选中的 key {selectedKey ? '已禁用' : '不存在'}。Agent 无法运行，请改选其他 key 或切回全局默认值。
                 </span>
+                <Button variant="outline" size="sm" onClick={() => handleKeyChange(null)} disabled={saving}>切回全局默认</Button>
               </div>
             )}
 
@@ -215,6 +265,15 @@ export default function ProjectSettingsPanel({
                   当前使用：<span className="font-medium text-neutral-800 dark:text-neutral-200">{effectiveKey.label}</span>
                   {' '}({effectiveKey.provider})
                 </span>
+              </div>
+            )}
+
+            {!pinnedKeyStale && effectiveKeyRateLimited && (
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                <span className="text-xs text-amber-700 dark:text-amber-300 flex-1">
+                  当前生效凭据正在限流冷却中。{selectedKeyId && !fallbackEnabled ? '因为项目禁用了回退，所以当前运行会直接失败。' : '如果存在其他可用凭据，系统会尝试自动回退。'}
+                </span>
+                {selectedKeyId && <Button variant="outline" size="sm" onClick={() => handleKeyChange(null)} disabled={saving}>改用全局默认</Button>}
               </div>
             )}
 
@@ -247,16 +306,21 @@ export default function ProjectSettingsPanel({
 
         {/* Model Overrides */}
         {isWriteMode && (() => {
+          const MODEL_SLOTS = [
+            { key: 'high', label: '复杂规划', hint: '执行制作人 / 高复杂分析 / 强推理' },
+            { key: 'mid', label: '默认执行', hint: 'PM / 策划 / 常规主力模型' },
+            { key: 'low', label: '代码与快响应', hint: '程序 / 工具调用 / 高频执行' },
+            { key: 'xlow', label: '轻量任务', hint: '轻回归 / 轻分析 / 低成本任务' },
+          ]
           const canOverride = selectedKeyId && !fallbackEnabled && !pinnedKeyStale;
           const currentModels = selectedProject?.config?.models || {};
           const hasOverrides = !!(currentModels.high || currentModels.mid || currentModels.low || currentModels.xlow);
           const keyProvider = selectedKey?.provider || 'anthropic';
+          const modelCatalogEntry = (config?.modelCatalog?.byKey || []).find(entry => entry.keyId === selectedKeyId) || null;
           const providerTiers = keyProvider === 'custom'
             ? (config?.tiers || {})
             : (config?.allTiers?.[keyProvider] || {});
-          const availableModels = keyProvider === 'custom'
-            ? []
-            : (config?.availableModels?.[keyProvider] || []);
+          const availableModels = modelCatalogEntry?.models || [];
 
           const saveModels = async (models) => {
             try {
@@ -299,53 +363,43 @@ export default function ProjectSettingsPanel({
             </div>
             {!canOverride ? (
               <p className="text-xs text-neutral-400 dark:text-neutral-500">
-                 如果要覆盖模型，请先在上方选择一个固定 API Key，并关闭回退。这样项目会锁定到单一 provider，才能按档位自定义模型。
+                  如果要覆盖模型，请先在上方选择一个固定 API Key，并关闭回退。这样项目会锁定到单一凭据，才能按用途槽位自定义模型。
               </p>
             ) : hasOverrides ? (
-              <div className="space-y-2">
-                {['high', 'mid', 'low', 'xlow'].map(tier => (
-                  <div key={tier} className="flex items-center gap-2">
-                    <span className={`text-xs font-bold w-10 shrink-0 ${tier === 'high' ? 'text-purple-500' : tier === 'mid' ? 'text-blue-500' : tier === 'xlow' ? 'text-neutral-300 dark:text-neutral-600' : 'text-neutral-400'}`}>{tier.toUpperCase()}</span>
-                    {keyProvider === 'custom' ? (
-                      <input
-                        type="text"
-                        value={currentModels[tier] || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const models = { ...currentModels };
-                          if (val) models[tier] = val; else delete models[tier];
-                          setSelectedProject(prev => prev ? { ...prev, config: { ...prev.config, models } } : prev);
-                          saveModels(models);
-                        }}
-                        placeholder={`Default (${providerTiers[tier]?.model || '—'})`}
-                        className="flex-1 min-w-0 px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
-                      />
-                    ) : (
-                      <select
-                        value={currentModels[tier] || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const models = { ...currentModels };
-                          if (val) models[tier] = val; else delete models[tier];
-                          setSelectedProject(prev => prev ? { ...prev, config: { ...prev.config, models } } : prev);
-                          saveModels(models);
-                        }}
-                        className="flex-1 min-w-0 px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
-                      >
-                         <option value="">默认值（{providerTiers[tier]?.model || '—'}{providerTiers[tier]?.reasoningEffort ? `（${providerTiers[tier].reasoningEffort}）` : ''}）</option>
-                        {availableModels.map(m => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                      </select>
-                    )}
+              <div className="space-y-3">
+                <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                  当前展示的是这把项目固定 key 实际可用的模型。每个用途槽位只配置一个主模型，fallback 由 PM 自己决定。
+                </div>
+                {MODEL_SLOTS.map(slot => (
+                  <div key={slot.key} className="flex items-start gap-2">
+                    <div className="w-24 shrink-0">
+                      <div className={`text-xs font-bold ${slot.key === 'high' ? 'text-purple-500' : slot.key === 'mid' ? 'text-blue-500' : slot.key === 'xlow' ? 'text-neutral-300 dark:text-neutral-600' : 'text-neutral-400'}`}>{slot.label}</div>
+                      <div className="text-[10px] text-neutral-400 dark:text-neutral-500 leading-tight mt-0.5">{slot.hint}</div>
+                    </div>
+                    <select
+                      value={currentModels[slot.key] || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const models = { ...currentModels };
+                        if (val) models[slot.key] = val; else delete models[slot.key];
+                        setSelectedProject(prev => prev ? { ...prev, config: { ...prev.config, models } } : prev);
+                        saveModels(models);
+                      }}
+                      className="flex-1 min-w-0 px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                    >
+                      <option value="">默认值（{providerTiers[slot.key]?.model || '—'}{providerTiers[slot.key]?.reasoningEffort ? `（${providerTiers[slot.key].reasoningEffort}）` : ''}）</option>
+                      {availableModels.map(m => (
+                        <option key={`${slot.key}-${m.id}`} value={m.id}>{m.name}{m.id !== m.name ? ` · ${m.id}` : ''}{m.tags?.length ? ` · ${m.tags.join(', ')}` : ''}{m.source ? ` [${m.source}]` : ''}</option>
+                      ))}
+                    </select>
                   </div>
                 ))}
               </div>
             ) : (
               <p className="text-xs text-neutral-400 dark:text-neutral-500">
                 {keyProvider === 'custom'
-                   ? '当前使用选中的自定义凭据默认值。启用后可手动填写各档位模型。'
-                   : `当前使用 ${keyProvider} 的默认模型。启用后可按档位自定义。`}
+                   ? '当前使用这把自定义凭据自己的模型目录。启用后可按用途直接选择真实可用模型。'
+                   : `当前使用 ${keyProvider} 的模型目录。启用后可按用途从当前固定 key 实际可用的模型中选择。`}
               </p>
             )}
           </div>

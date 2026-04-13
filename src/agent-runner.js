@@ -51,6 +51,18 @@ function parseRetryCooldown(message) {
   return 5 * 60_000; // default 5 min
 }
 
+function isExplicitRateLimitError(err) {
+  const status = err?.status || err?.code || 0;
+  const message = String(err?.message || '');
+  return status === 429 || /rate.limit|usage.limit|quota|too.many.requests|rate limit exceeded/i.test(message);
+}
+
+function isRetryableProviderError(err) {
+  const status = err?.status || err?.code || 0;
+  const message = String(err?.message || '');
+  return isExplicitRateLimitError(err) || status === 503 || /overloaded|unavailable/i.test(message);
+}
+
 // ---------------------------------------------------------------------------
 // Git/gh sandbox: block unauthorized repo operations
 // ---------------------------------------------------------------------------
@@ -1170,14 +1182,13 @@ export async function runAgentWithAPI(opts) {
             log(`Agent ${abortReason === 'timeout' ? 'timeout' : 'termination'} during API call`);
             return makeResult(false, lastResultText || (abortReason === 'timeout' ? 'Agent timed out' : 'Agent was terminated'), { timedOut: abortReason === 'timeout' });
           }
-          const status = err.status || err.code || 0;
-          const isRetryable = status === 429 || status === 503 || status === 401 || /rate.limit|usage.limit|overloaded|unavailable|quota|authentication_error|invalid.*api.key/i.test(err.message);
+          const isRetryable = isRetryableProviderError(err);
           if (isRetryable && attempt < MAX_RETRIES) {
             // Parse cooldown from error message (supports "~162 min", "30s", "2 hours", etc.)
             const cooldownMs = parseRetryCooldown(err.message);
 
             // Mark key as rate-limited with actual cooldown duration
-            if (onRateLimited && keyId) {
+            if (onRateLimited && keyId && isExplicitRateLimitError(err)) {
               onRateLimited(keyId, cooldownMs);
               log(`Key ${keyId} rate-limited for ${Math.ceil(cooldownMs / 60_000)}m`);
             }

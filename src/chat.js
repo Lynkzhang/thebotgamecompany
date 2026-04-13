@@ -26,6 +26,10 @@ import { executeTool } from './agent-runner.js';
 // Map of active streams: chatSessionId -> { text, toolCalls, sseClients }
 const activeStreams = new Map();
 
+function isExplicitRateLimitMessage(message = '') {
+  return /rate.limit|usage.limit|quota|too.many.requests|rate limit exceeded|429/i.test(String(message));
+}
+
 export function getActiveStream(chatId) {
   return activeStreams.get(chatId) || null;
 }
@@ -473,7 +477,7 @@ export async function streamChatMessage(opts) {
             case 'error':
               const errMsg = event.error?.errorMessage || 'Stream error';
               console.error(`[Chat] Stream error (session ${chatId}): ${errMsg}`);
-              if (/rate.limit|usage.limit|quota|429/i.test(errMsg)) {
+              if (isExplicitRateLimitMessage(errMsg)) {
                 throw new Error(errMsg);
               }
               if (fullAssistantText || assistantText) {
@@ -571,7 +575,7 @@ export async function streamChatMessage(opts) {
   } catch (err) {
     console.error(`[Chat] Error (session ${chatId}): ${err.message}`);
     // Re-throw rate-limit errors so caller can retry with fallback key
-    if (/rate.limit|usage.limit|quota|429/i.test(err.message)) {
+    if (isExplicitRateLimitMessage(err.message)) {
       activeStreams.delete(chatId);
       throw err;
     }

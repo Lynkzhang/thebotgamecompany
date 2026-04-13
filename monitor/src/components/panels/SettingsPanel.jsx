@@ -11,6 +11,79 @@ import { useToast } from '@/contexts/ToastContext'
 // Add Credential Wizard
 // ---------------------------------------------------------------------------
 
+function ModelCatalogEditor({ value, onChange }) {
+  const rows = value.length > 0 ? value : [{ id: '', label: '', tagsText: '' }]
+
+  const updateAt = (index, patch) => {
+    const next = rows.map((row, i) => i === index ? { ...row, ...patch } : row)
+    onChange(next)
+  }
+
+  const removeAt = (index) => {
+    const next = rows.filter((_, i) => i !== index)
+    onChange(next.length > 0 ? next : [{ id: '', label: '', tagsText: '' }])
+  }
+
+  const addEmpty = () => {
+    onChange([...rows, { id: '', label: '', tagsText: '' }])
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs text-neutral-500 dark:text-neutral-400">完整模型目录（可选）</div>
+        <button
+          type="button"
+          onClick={addEmpty}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-neutral-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+        >
+          <Plus className="w-3 h-3" /> 添加模型
+        </button>
+      </div>
+      <div className="space-y-2">
+        {rows.every(model => !model.id.trim() && !model.label.trim()) && (
+          <div className="text-xs text-neutral-400 dark:text-neutral-500 border border-dashed border-neutral-300 dark:border-neutral-700 rounded-lg p-3">
+            还没有配置完整模型目录。你可以继续只填默认模型和 tier，也可以在这里把一个凭据下支持的全部模型都录进去。
+          </div>
+        )}
+        {rows.map((model, index) => (
+          <div key={index} className="grid grid-cols-[1.2fr_1fr_1fr_auto] gap-2 items-center">
+            <input
+              type="text"
+              value={model.id}
+              onChange={e => updateAt(index, { id: e.target.value })}
+              placeholder="model-id"
+              className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200 font-mono"
+            />
+            <input
+              type="text"
+              value={model.label}
+              onChange={e => updateAt(index, { label: e.target.value })}
+              placeholder="显示名称"
+              className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200"
+            />
+            <input
+              type="text"
+              value={model.tagsText}
+              onChange={e => updateAt(index, { tagsText: e.target.value })}
+              placeholder="标签，用逗号分隔"
+              className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200"
+            />
+            <button
+              type="button"
+              onClick={() => removeAt(index)}
+              className="p-2 rounded border border-neutral-300 dark:border-neutral-600 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+              title="删除模型"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function CustomCredentialFields({
   token,
   setToken,
@@ -22,6 +95,8 @@ function CustomCredentialFields({
   setInterfaceType,
   defaultModel,
   setDefaultModel,
+  modelCatalogEntries,
+  setModelCatalogEntries,
   tierModels,
   setTierModels,
   tokenLabel = 'API Key',
@@ -75,6 +150,12 @@ function CustomCredentialFields({
         onChange={e => setDefaultModel(e.target.value)}
         className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200"
       />
+      <div>
+        <ModelCatalogEditor
+          value={modelCatalogEntries}
+          onChange={setModelCatalogEntries}
+        />
+      </div>
       <div className="grid grid-cols-2 gap-2">
         {['high', 'mid', 'low', 'xlow'].map(tier => (
           <input
@@ -91,13 +172,18 @@ function CustomCredentialFields({
   )
 }
 
-function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel }) {
+function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel, onError }) {
   const [label, setLabel] = useState(credential.label || '')
   const [token, setToken] = useState('')
   const [baseUrl, setBaseUrl] = useState(credential.customConfig?.baseUrl || '')
   const [apiStyle, setApiStyle] = useState(credential.customConfig?.apiStyle || 'openai')
   const [interfaceType, setInterfaceType] = useState(credential.customConfig?.interfaceType || (credential.customConfig?.apiStyle === 'responses' ? 'responses' : credential.customConfig?.apiStyle === 'anthropic' ? 'messages' : 'auto'))
   const [defaultModel, setDefaultModel] = useState(credential.customConfig?.defaultModel || '')
+  const [modelCatalogEntries, setModelCatalogEntries] = useState((credential.customConfig?.models || []).map(m => ({
+    id: m.id || m || '',
+    label: m.label || m.id || m || '',
+    tagsText: Array.isArray(m.tags) ? m.tags.join(', ') : '',
+  })))
   const [tierModels, setTierModels] = useState({
     high: credential.customConfig?.tierModels?.high || '',
     mid: credential.customConfig?.tierModels?.mid || '',
@@ -115,6 +201,15 @@ function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel 
         baseUrl,
         defaultModel,
       }
+      const models = modelCatalogEntries
+        .map(entry => ({
+          id: String(entry.id || '').trim(),
+          label: String(entry.label || '').trim(),
+          tags: String(entry.tagsText || '').split(',').map(tag => tag.trim()).filter(Boolean),
+        }))
+        .filter(entry => entry.id)
+        .map(entry => ({ id: entry.id, label: entry.label || entry.id, ...(entry.tags.length > 0 ? { tags: entry.tags } : {}) }))
+      if (models.length > 0) customConfig.models = models
       const trimmedTierModels = Object.fromEntries(
         Object.entries(tierModels).filter(([, value]) => value.trim())
       )
@@ -135,7 +230,11 @@ function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel 
         onComplete()
         return
       }
-    } catch {}
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || '保存自定义凭据失败')
+    } catch (e) {
+      onError?.(e.message || '保存自定义凭据失败')
+    }
     setSaving(false)
   }
 
@@ -164,6 +263,8 @@ function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel 
           setInterfaceType={setInterfaceType}
           defaultModel={defaultModel}
           setDefaultModel={setDefaultModel}
+          modelCatalogEntries={modelCatalogEntries}
+          setModelCatalogEntries={setModelCatalogEntries}
           tierModels={tierModels}
           setTierModels={setTierModels}
           tokenLabel="替换用 API Key"
@@ -189,7 +290,7 @@ function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel 
   )
 }
 
-function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders }) {
+function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders, onError }) {
   const [step, setStep] = useState('provider') // provider → method → action → label
   const [selectedProvider, setSelectedProvider] = useState(null)
   const [selectedMethod, setSelectedMethod] = useState(null) // 'api_key' | 'oauth'
@@ -198,6 +299,7 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
   const [apiStyle, setApiStyle] = useState('openai')
   const [interfaceType, setInterfaceType] = useState('auto')
   const [defaultModel, setDefaultModel] = useState('')
+  const [modelCatalogEntries, setModelCatalogEntries] = useState([])
   const [tierModels, setTierModels] = useState({ high: '', mid: '', low: '', xlow: '' })
   const [label, setLabel] = useState('')
   const [saving, setSaving] = useState(false)
@@ -340,6 +442,8 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
               setInterfaceType={setInterfaceType}
               defaultModel={defaultModel}
               setDefaultModel={setDefaultModel}
+              modelCatalogEntries={modelCatalogEntries}
+              setModelCatalogEntries={setModelCatalogEntries}
               tierModels={tierModels}
               setTierModels={setTierModels}
             />
@@ -537,6 +641,14 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
             label: label || providerDef?.label || selectedProvider,
           }
           if (selectedProvider === 'custom') {
+            const models = modelCatalogEntries
+              .map(entry => ({
+                id: String(entry.id || '').trim(),
+                label: String(entry.label || '').trim(),
+                tags: String(entry.tagsText || '').split(',').map(tag => tag.trim()).filter(Boolean),
+              }))
+              .filter(entry => entry.id)
+              .map(entry => ({ id: entry.id, label: entry.label || entry.id, ...(entry.tags.length > 0 ? { tags: entry.tags } : {}) }))
             const trimmedTierModels = Object.fromEntries(
               Object.entries(tierModels).filter(([, value]) => value.trim())
             )
@@ -546,6 +658,7 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
               baseUrl,
               defaultModel,
             }
+            if (models.length > 0) body.customConfig.models = models
             if (Object.keys(trimmedTierModels).length > 0) {
               body.customConfig.tierModels = trimmedTierModels
             }
@@ -559,6 +672,8 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
             onComplete()
             return
           }
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data.error || '添加凭据失败')
         } else if (selectedMethod === 'oauth') {
           // OAuth credentials were already saved by the server during the flow.
           // We need to add a key pool entry pointing to the OAuth credentials.
@@ -576,8 +691,12 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
             onComplete()
             return
           }
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data.error || '添加 OAuth 凭据失败')
         }
-      } catch {}
+      } catch (e) {
+        onError?.(e.message || '添加凭据失败')
+      }
       setSaving(false)
     }
 
@@ -725,6 +844,11 @@ export default function SettingsPanel({
     <Panel id="settings" open={settingsOpen} onClose={onClose}>
       <PanelHeader onClose={onClose}>设置</PanelHeader>
       <PanelContent>
+        {keys.length === 0 && (
+          <div className="mb-4 p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-300 text-sm">
+            当前没有任何可用 API key。项目运行、聊天和报告总结都会失败，请先添加一个凭据。
+          </div>
+        )}
         <div className="pb-5">
           <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-3">显示</h3>
           <div className="flex items-center justify-between py-2">
@@ -816,6 +940,7 @@ export default function SettingsPanel({
                   showToast('凭据已添加')
                 }}
                 onCancel={() => setShowWizard(false)}
+                onError={(message) => showToast(message)}
               />
             </div>
           ) : (
@@ -838,6 +963,7 @@ export default function SettingsPanel({
                 showToast('自定义凭据已更新')
               }}
               onCancel={() => setEditingCustomKey(null)}
+              onError={(message) => showToast(message)}
             />
           )}
 

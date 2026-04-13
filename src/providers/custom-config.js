@@ -69,6 +69,26 @@ export function normalizeCustomConfig(input) {
     defaultModel,
   };
 
+  if (Array.isArray(input.models)) {
+    const models = input.models
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          const id = entry.trim();
+          return id ? { id, label: id } : null;
+        }
+        if (!entry || typeof entry !== 'object') return null;
+        const id = String(entry.id || '').trim();
+        if (!id) return null;
+        const label = String(entry.label || id).trim() || id;
+        const tags = Array.isArray(entry.tags) ? entry.tags.map(t => String(t || '').trim()).filter(Boolean) : undefined;
+        return { id, label, ...(tags && tags.length > 0 ? { tags } : {}) };
+      })
+      .filter(Boolean);
+    if (models.length > 0) {
+      normalized.models = models;
+    }
+  }
+
   if (input.tierModels && typeof input.tierModels === 'object') {
     const tierModels = {};
     for (const tier of ['high', 'mid', 'low', 'xlow']) {
@@ -97,6 +117,28 @@ export function buildCustomTierMap(customConfig) {
   };
 }
 
+export function buildCustomModelList(customConfig) {
+  const config = normalizeCustomConfig(customConfig);
+  if (Array.isArray(config.models) && config.models.length > 0) {
+    return config.models.map(model => ({
+      id: model.id,
+      name: model.label || model.id,
+      tags: model.tags || [],
+      source: 'catalog',
+    }));
+  }
+  const tiers = buildCustomTierMap(config);
+  const seen = new Set();
+  return [
+    { id: config.defaultModel, name: config.defaultModel, source: 'default' },
+    ...Object.entries(tiers).map(([tier, value]) => ({ id: value.model, name: value.model, source: tier }))
+  ].filter(model => {
+    if (!model.id || seen.has(model.id)) return false;
+    seen.add(model.id);
+    return true;
+  });
+}
+
 function fallbackResolveModelTier(tierOrModel, provider, projectModels, runtimeTiers = null) {
   const tier = String(tierOrModel || '').trim().toLowerCase();
   if (projectModels && projectModels[tier]) {
@@ -106,6 +148,21 @@ function fallbackResolveModelTier(tierOrModel, provider, projectModels, runtimeT
     return runtimeTiers[tier];
   }
   return { model: tierOrModel };
+}
+
+function resolveCustomModelAlias(tierOrModel, runtimeTiers) {
+  const raw = String(tierOrModel || '').trim();
+  const lower = raw.toLowerCase();
+  if (!raw || !runtimeTiers) return { model: raw };
+  if (runtimeTiers[lower]) return runtimeTiers[lower];
+
+  if (lower.includes('claude-opus')) return runtimeTiers.high || { model: raw };
+  if (lower.includes('claude-sonnet')) return runtimeTiers.mid || runtimeTiers.high || { model: raw };
+  if (lower.includes('claude-haiku')) return runtimeTiers.xlow || runtimeTiers.low || { model: raw };
+  if (lower.includes('codex')) return runtimeTiers.low || runtimeTiers.mid || { model: raw };
+  if (lower.startsWith('gpt-')) return runtimeTiers.low || runtimeTiers.mid || { model: raw };
+
+  return { model: raw };
 }
 
 export function resolveProviderRuntime({ provider, modelTier, keyResult, projectModels, resolveModelTier = fallbackResolveModelTier }) {
@@ -122,7 +179,10 @@ export function resolveProviderRuntime({ provider, modelTier, keyResult, project
 
   const customConfig = normalizeCustomConfig(keyResult?.customConfig);
   const runtimeTiers = buildCustomTierMap(customConfig);
-  const selected = fallbackResolveModelTier(modelTier, provider, projectModels, runtimeTiers);
+  const selected = resolveCustomModelAlias(
+    fallbackResolveModelTier(modelTier, provider, projectModels, runtimeTiers).model,
+    runtimeTiers,
+  );
   return {
     provider,
     selectedModel: selected.model,

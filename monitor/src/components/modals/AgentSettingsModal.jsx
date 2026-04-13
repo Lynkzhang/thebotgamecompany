@@ -1,11 +1,11 @@
 import React from 'react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Settings } from 'lucide-react'
 import { Modal, ModalHeader, ModalContent } from '@/components/ui/modal'
 
-export default function AgentSettingsModal({ agentSettingsModal, setAgentSettingsModal, saveAgentSettings, provider, availableModels = [] }) {
+export default function AgentSettingsModal({ agentSettingsModal, setAgentSettingsModal, saveAgentSettings, provider, availableModels = [], modelSourceLabel = '' }) {
   const currentModelMissing = agentSettingsModal.model && !availableModels.some(m => m.id === agentSettingsModal.model)
-  const usesCustomProvider = provider === 'custom'
 
   return (
     <Modal open={agentSettingsModal.open} onClose={() => setAgentSettingsModal({ ...agentSettingsModal, open: false })}>
@@ -16,31 +16,27 @@ export default function AgentSettingsModal({ agentSettingsModal, setAgentSetting
       <ModalContent>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-neutral-600 dark:text-neutral-300 mb-1">模型</label>
-            {usesCustomProvider ? (
-              <input
-                className="w-full px-3 py-2 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-md text-sm dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={agentSettingsModal.model}
-                onChange={(e) => setAgentSettingsModal(prev => ({ ...prev, model: e.target.value }))}
-                placeholder="留空表示继承项目默认模型"
-              />
-            ) : (
-              <select
-                className="w-full px-3 py-2 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-md text-sm dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={agentSettingsModal.model}
-                onChange={(e) => setAgentSettingsModal(prev => ({ ...prev, model: e.target.value }))}
-              >
-                <option value="">继承项目默认模型</option>
-                {currentModelMissing && (
-                  <option value={agentSettingsModal.model}>{agentSettingsModal.model}（当前值）</option>
-                )}
-                {availableModels.map(model => (
-                  <option key={model.id} value={model.id}>{model.name}</option>
-                ))}
-              </select>
-            )}
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <label className="block text-sm font-medium text-neutral-600 dark:text-neutral-300">模型</label>
+              {modelSourceLabel && <Badge variant="outline">{modelSourceLabel}</Badge>}
+            </div>
+            <select
+              className="w-full px-3 py-2 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-md text-sm dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={agentSettingsModal.model}
+              onChange={(e) => setAgentSettingsModal(prev => ({ ...prev, model: e.target.value }))}
+            >
+              <option value="">继承项目默认模型</option>
+              {currentModelMissing && (
+                <option value={agentSettingsModal.model}>{agentSettingsModal.model}（当前值）</option>
+              )}
+              {availableModels.map(model => (
+                <option key={model.id} value={model.id}>{model.name}{model.id !== model.name ? ` · ${model.id}` : ''}{model.tags?.length ? ` · ${model.tags.join(', ')}` : ''}{model.source ? ` [${model.source}]` : ''}</option>
+              ))}
+            </select>
             <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
-              {usesCustomProvider ? '自定义 provider 需要手动填写模型名。留空时继承项目默认模型。' : `当前按 ${provider || 'provider'} 的可用模型选择。留空时继承项目默认模型。`}
+              {availableModels.length > 0
+                ? `当前按 ${provider || 'provider'} 的真实可用模型目录选择。留空时继承项目默认模型。`
+                : '当前没有可选模型目录，留空时继承项目默认模型。'}
             </p>
           </div>
           {agentSettingsModal.error && (

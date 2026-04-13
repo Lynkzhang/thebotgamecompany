@@ -888,7 +888,15 @@ export default function ProjectView({
         setAgentSettingsModal={setAgentSettingsModal}
         saveAgentSettings={saveAgentSettings}
         provider={config.provider}
-        availableModels={config.availableModels?.[config.provider] || []}
+        availableModels={(() => {
+          const selectedKeyId = config.keySelection?.keyId || null
+          if (selectedKeyId) {
+            return (config.modelCatalog?.byKey || []).find(entry => entry.keyId === selectedKeyId)?.models || []
+          }
+          const firstEnabled = (config.modelCatalog?.byKey || [])[0]
+          return firstEnabled?.models || config.availableModels?.[config.provider] || []
+        })()}
+        modelSourceLabel={config.keySelection?.keyId ? '项目固定 key 可用模型' : '当前默认 key 可用模型'}
       />
       <BootstrapPanel bootstrapModal={bootstrapModal} setBootstrapModal={setBootstrapModal} executeBootstrap={executeBootstrap} />
       <BudgetInfoModal open={budgetInfoModal} onClose={() => setBudgetInfoModal(false)} />

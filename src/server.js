@@ -17,7 +17,7 @@ import Database from 'better-sqlite3';
 import { runAgentWithAPI } from './agent-runner.js';
 import { listSessions as chatListSessions, createSession as chatCreateSession, getSession as chatGetSession, deleteSession as chatDeleteSession, streamChatMessage, getActiveStream, isStreaming as isChatStreaming, saveMessage as chatSaveMessage } from './chat.js';
 import { resolveModel, callModel, buildUserMessage, getModels as getPiModels } from './providers/index.js';
-import { buildCustomTierMap, resolveProviderRuntime } from './providers/custom-config.js';
+import { buildCustomTierMap, buildCustomModelList, resolveProviderRuntime } from './providers/custom-config.js';
 import { startOAuthLogin, submitManualCode, checkOAuthStatus, getAccessToken as getOAuthAccessToken, clearCredentials as clearOAuthCredentials, listOAuthProviders, loadCredentials as loadOAuthCredentials } from './oauth.js';
 import {
   loadKeyPool, addKey, addOAuthKey, removeKey, updateKey, reorderKeys,
@@ -79,6 +79,10 @@ function parseSummarizeCooldown(message) {
   return 5 * 60_000;
 }
 
+function isExplicitRateLimitMessage(message = '') {
+  return /rate.limit|usage.limit|quota|too.many.requests|rate limit exceeded|429/i.test(String(message));
+}
+
 // Model tier system — maps abstract tiers to provider-specific models
 const MODEL_TIERS = {
   anthropic: {
@@ -113,6 +117,15 @@ const MODEL_TIERS = {
   },
 };
 
+const EFFORT_LEVELS = ['medium', 'high', 'xhigh'];
+const ALLOWED_MODELS = {
+  anthropic: /^claude-(opus|sonnet)-4-6$|^claude-haiku-4-5-/,
+  openai: /^(gpt-5\.[34]|o[34])/,
+  'openai-codex': /^(gpt-5\.[34])/,
+  google: /^gemini-[23]/,
+  minimax: /MiniMax/,
+};
+
 function resolveModelTier(tierOrModel, provider, projectModels) {
   const tier = (tierOrModel || '').toLowerCase().trim();
   // Project-level model overrides take priority
@@ -141,6 +154,76 @@ function getProviderRuntimeSelection({ provider, modelTier, keyResult, projectMo
     projectModels,
     resolveModelTier,
   });
+}
+
+function buildProviderAvailableModels() {
+  const availableModels = {};
+  for (const provider of Object.keys(MODEL_TIERS)) {
+    try {
+      const models = getPiModels(provider);
+      const filter = ALLOWED_MODELS[provider];
+      const entries = [];
+      for (const m of models) {
+        if (filter && !filter.test(m.id)) continue;
+        if (m.id.includes('latest')) continue;
+        if (m.reasoning) {
+          for (const effort of EFFORT_LEVELS) {
+            entries.push({ id: `${m.id}@${effort}`, name: `${m.name} (${effort})`, provider });
+          }
+        } else {
+          entries.push({ id: m.id, name: m.name, provider });
+        }
+      }
+      availableModels[provider] = entries;
+    } catch {
+      availableModels[provider] = [];
+    }
+  }
+  return availableModels;
+}
+
+function buildModelCatalog(keyPoolSafe) {
+  const byProvider = buildProviderAvailableModels();
+  const byKey = (keyPoolSafe?.keys || []).filter(k => k.enabled).map(key => {
+    if (key.provider === 'custom' && key.customConfig) {
+      const models = buildCustomModelList(key.customConfig);
+      return { keyId: key.id, keyLabel: key.label, provider: key.provider, rateLimited: key.rateLimited, models };
+    }
+    return {
+      keyId: key.id,
+      keyLabel: key.label,
+      provider: key.provider,
+      rateLimited: key.rateLimited,
+      models: byProvider[key.provider] || [],
+    };
+  });
+  return { byProvider, byKey };
+}
+
+function formatModelCatalogForPrompt(modelCatalog, { selectedKeyId = null } = {}) {
+  const entries = modelCatalog?.byKey || [];
+  if (entries.length === 0) return '当前没有任何可用凭据，因此没有可选模型。';
+  return entries.map(entry => {
+    const header = `- ${entry.keyLabel} [${entry.provider}]${entry.keyId === selectedKeyId ? ' (当前项目固定 key)' : ''}${entry.rateLimited ? ' (当前限流)' : ''}`;
+    const models = entry.models.slice(0, 24).map(model => {
+      const label = model.name && model.name !== model.id ? ` (${model.name})` : '';
+      const tags = Array.isArray(model.tags) && model.tags.length > 0 ? ` tags: ${model.tags.join(', ')}` : '';
+      return `  - ${model.id}${label}${model.source ? ` [${model.source}]` : ''}${tags}`;
+    });
+    return [header, ...models].join('\n');
+  }).join('\n');
+}
+
+function formatModelTagSelectionGuide() {
+  return [
+    '## 模型选择规则',
+    '- 优先按模型 tags 选型，而不是只看 provider。',
+    '- 如果模型带有明确 tags，例如 `pm`、`planning`、`coding`、`ui`、`art`、`qa`、`fast`、`cheap`、`long-context`，优先选择 tags 最贴合当前岗位和任务的模型。',
+    '- 如果多个模型都能做，优先选择标签更具体、更贴近任务的那个；不要默认所有人都用同一个模型。',
+    '- 如果项目固定了某个 key，请优先在该 key 的模型目录里按 tags 选；只有允许回退时，才考虑其他 key。',
+    '- 如果目录里没有 tags，才退回到用途槽位、经验规则或默认模型。',
+    '',
+  ].join('\n');
 }
 
 function detectProviderFromToken(token) {
@@ -2231,6 +2314,27 @@ class ProjectRunner {
 
     // Strip YAML frontmatter (---...---) from skill content before building prompt
     skillContent = skillContent.replace(/^---[\s\S]*?---\n*/, '');
+
+    if (agent.name === 'pm') {
+      const config = this.loadConfig();
+      const keyPool = getKeyPoolSafe();
+      const modelCatalog = buildModelCatalog(keyPool);
+      const selectedKeyId = config.keySelection?.keyId || null;
+      const modelCatalogBlock = [
+        '## 当前实例可用模型目录',
+        '下面是当前实例基于已启用凭据实际可用的模型目录。你在创建新 agent 或给现有 agent 分配模型时，应优先从这里选择，不要只靠固定 provider 档位猜测。',
+        '',
+        formatModelTagSelectionGuide(),
+        formatModelCatalogForPrompt(modelCatalog, { selectedKeyId }),
+        '',
+        '如果项目固定了某个 key，请优先从该 key 能用的模型里选择；只有在允许回退时，才考虑其他 key 的模型。',
+        '',
+        '---',
+        ''
+      ].join('\n');
+      skillContent = modelCatalogBlock + skillContent;
+    }
+
     skillContent = (taskHeader + sharedRules + skillContent).replaceAll('{project_dir}', this.agentDir);
 
     return skillContent;
@@ -3577,36 +3681,8 @@ const server = http.createServer(async (req, res) => {
         ? buildCustomTierMap(detectedKey.customConfig)
         : (MODEL_TIERS[detectedProvider] || {});
 
-      // Build available models list per provider from pi-ai
-      // Only show recent/relevant models, not the full historical catalog
-      const EFFORT_LEVELS = ['medium', 'high', 'xhigh'];
-      const ALLOWED_MODELS = {
-        anthropic: /^claude-(opus|sonnet)-4-6$|^claude-haiku-4-5-/,
-        openai: /^(gpt-5\.[34]|o[34])/,
-        'openai-codex': /^(gpt-5\.[34])/,
-        google: /^gemini-[23]/,
-        minimax: /MiniMax/,
-      };
-      const availableModels = {};
-      for (const provider of Object.keys(MODEL_TIERS)) {
-        try {
-          const models = getPiModels(provider);
-          const filter = ALLOWED_MODELS[provider];
-          const entries = [];
-          for (const m of models) {
-            if (filter && !filter.test(m.id)) continue;
-            if (m.id.includes('latest')) continue; // skip aliases, use exact versions
-            if (m.reasoning) {
-              for (const effort of EFFORT_LEVELS) {
-                entries.push({ id: `${m.id}@${effort}`, name: `${m.name} (${effort})` });
-              }
-            } else {
-              entries.push({ id: m.id, name: m.name });
-            }
-          }
-          availableModels[provider] = entries;
-        } catch { availableModels[provider] = []; }
-      }
+      const modelCatalog = buildModelCatalog(keyPool);
+      const availableModels = { ...modelCatalog.byProvider };
       availableModels.custom = [];
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3617,6 +3693,7 @@ const server = http.createServer(async (req, res) => {
         tiers: detectedTiers,
         allTiers: detectedProvider === 'custom' ? { ...MODEL_TIERS, custom: detectedTiers } : MODEL_TIERS,
         availableModels,
+        modelCatalog,
         keyPool,
         keySelection,
         allowCustomProvider: ALLOW_CUSTOM_PROVIDER,
@@ -3704,11 +3781,12 @@ const server = http.createServer(async (req, res) => {
           const { models } = JSON.parse(body);
           // Read existing config, merge models, save
           const config = runner.loadConfig();
-          if (models && (models.high || models.mid || models.low)) {
+          if (models && (models.high || models.mid || models.low || models.xlow)) {
             config.models = {};
             if (models.high) config.models.high = models.high;
             if (models.mid) config.models.mid = models.mid;
             if (models.low) config.models.low = models.low;
+            if (models.xlow) config.models.xlow = models.xlow;
           } else {
             delete config.models;
           }
@@ -3855,7 +3933,7 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         log(`Summarize error: ${e.message}`, runner.id);
         // Mark key as rate-limited if the error indicates a usage/rate limit
-        if (keyResult?.keyId && /rate.limit|usage.limit|quota|429/i.test(e.message)) {
+        if (keyResult?.keyId && isExplicitRateLimitMessage(e.message)) {
           const cooldownMs = parseSummarizeCooldown(e.message);
           markRateLimited(keyResult.keyId, cooldownMs);
           log(`Summarize: marked key ${keyResult.keyId} rate-limited for ${Math.ceil(cooldownMs / 60_000)}m`, runner.id);
@@ -4318,7 +4396,7 @@ const server = http.createServer(async (req, res) => {
             await streamChatMessage(chatOpts);
           } catch (chatErr) {
             // Check if rate-limited — try fallback key
-            const isRateLimit = /rate.limit|usage.limit|quota|429/i.test(chatErr.message);
+            const isRateLimit = isExplicitRateLimitMessage(chatErr.message);
             if (isRateLimit && keyResult.keyId) {
               const cooldownMs = parseSummarizeCooldown(chatErr.message);
               markRateLimited(keyResult.keyId, cooldownMs);
