@@ -11,8 +11,16 @@ import { useToast } from '@/contexts/ToastContext'
 // Add Credential Wizard
 // ---------------------------------------------------------------------------
 
+const MODEL_TAG_OPTIONS = [
+  'producer', 'pm', 'planning', 'general', 'fallback',
+  'coding', 'engineer', 'patch', 'review', 'tooling',
+  'qa', 'fast', 'cheap', 'light',
+  'analysis', 'reasoning', 'writing', 'chinese', 'long-context',
+  'art', 'ui', 'vision', 'image', 'generation', 'concept', 'design'
+]
+
 function ModelCatalogEditor({ value, onChange }) {
-  const rows = value.length > 0 ? value : [{ id: '', label: '', tagsText: '' }]
+  const rows = value.length > 0 ? value : [{ id: '', label: '', tags: [] }]
 
   const updateAt = (index, patch) => {
     const next = rows.map((row, i) => i === index ? { ...row, ...patch } : row)
@@ -21,11 +29,11 @@ function ModelCatalogEditor({ value, onChange }) {
 
   const removeAt = (index) => {
     const next = rows.filter((_, i) => i !== index)
-    onChange(next.length > 0 ? next : [{ id: '', label: '', tagsText: '' }])
+    onChange(next.length > 0 ? next : [{ id: '', label: '', tags: [] }])
   }
 
   const addEmpty = () => {
-    onChange([...rows, { id: '', label: '', tagsText: '' }])
+    onChange([...rows, { id: '', label: '', tags: [] }])
   }
 
   return (
@@ -47,7 +55,7 @@ function ModelCatalogEditor({ value, onChange }) {
           </div>
         )}
         {rows.map((model, index) => (
-          <div key={index} className="grid grid-cols-[1.2fr_1fr_1fr_auto] gap-2 items-center">
+          <div key={index} className="grid grid-cols-[1.2fr_1fr_1.2fr_auto] gap-2 items-start">
             <input
               type="text"
               value={model.id}
@@ -62,13 +70,39 @@ function ModelCatalogEditor({ value, onChange }) {
               placeholder="显示名称"
               className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200"
             />
-            <input
-              type="text"
-              value={model.tagsText}
-              onChange={e => updateAt(index, { tagsText: e.target.value })}
-              placeholder="标签，用逗号分隔"
-              className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200"
-            />
+            <div className="space-y-1">
+              <select
+                defaultValue=""
+                onChange={e => {
+                  const tag = e.target.value
+                  if (!tag) return
+                  const tags = Array.isArray(model.tags) ? model.tags : []
+                  if (!tags.includes(tag)) updateAt(index, { tags: [...tags, tag] })
+                  e.target.value = ''
+                }}
+                className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-800 dark:text-neutral-200"
+              >
+                <option value="">添加标签</option>
+                {MODEL_TAG_OPTIONS.filter(tag => !(model.tags || []).includes(tag)).map(tag => (
+                  <option key={tag} value={tag}>{tag}</option>
+                ))}
+              </select>
+              <div className="flex flex-wrap gap-1 min-h-[1.5rem]">
+                {(model.tags || []).map(tag => (
+                  <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-200 bg-neutral-50 dark:bg-neutral-800">
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => updateAt(index, { tags: (model.tags || []).filter(t => t !== tag) })}
+                      className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                      title="移除标签"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
             <button
               type="button"
               onClick={() => removeAt(index)}
@@ -182,7 +216,7 @@ function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel,
   const [modelCatalogEntries, setModelCatalogEntries] = useState((credential.customConfig?.models || []).map(m => ({
     id: m.id || m || '',
     label: m.label || m.id || m || '',
-    tagsText: Array.isArray(m.tags) ? m.tags.join(', ') : '',
+    tags: Array.isArray(m.tags) ? m.tags : [],
   })))
   const [tierModels, setTierModels] = useState({
     high: credential.customConfig?.tierModels?.high || '',
@@ -205,7 +239,7 @@ function EditCustomCredentialCard({ credential, authFetch, onComplete, onCancel,
         .map(entry => ({
           id: String(entry.id || '').trim(),
           label: String(entry.label || '').trim(),
-          tags: String(entry.tagsText || '').split(',').map(tag => tag.trim()).filter(Boolean),
+          tags: Array.isArray(entry.tags) ? entry.tags.map(tag => String(tag || '').trim()).filter(Boolean) : [],
         }))
         .filter(entry => entry.id)
         .map(entry => ({ id: entry.id, label: entry.label || entry.id, ...(entry.tags.length > 0 ? { tags: entry.tags } : {}) }))
@@ -645,7 +679,7 @@ function AddCredentialWizard({ onComplete, onCancel, authFetch, excludeProviders
               .map(entry => ({
                 id: String(entry.id || '').trim(),
                 label: String(entry.label || '').trim(),
-                tags: String(entry.tagsText || '').split(',').map(tag => tag.trim()).filter(Boolean),
+                tags: Array.isArray(entry.tags) ? entry.tags.map(tag => String(tag || '').trim()).filter(Boolean) : [],
               }))
               .filter(entry => entry.id)
               .map(entry => ({ id: entry.id, label: entry.label || entry.id, ...(entry.tags.length > 0 ? { tags: entry.tags } : {}) }))
