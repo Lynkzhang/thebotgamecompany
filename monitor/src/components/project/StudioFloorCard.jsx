@@ -6,9 +6,15 @@ import WorkerCard from '@/components/project/WorkerCard'
 
 function classifyWorker(agent) {
   const text = `${agent.role || ''} ${agent.name || ''}`.toLowerCase()
-  if (/策划|design|planner|system|narrative|quest|ux/.test(text)) return 'design'
+  if (/数值策划|数值|economy|numerical|balance/.test(text)) return 'design_numeric'
+  if (/系统策划|system design|system planner|system/.test(text)) return 'design_system'
+  if (/战斗策划|combat design|combat planner|combat/.test(text)) return 'design_combat'
+  if (/关卡策划|level design|level planner|level/.test(text)) return 'design_level'
   if (/程序|engineer|coder|developer|client|server|technical/.test(text)) return 'engineering'
-  if (/美术|art|artist|ui|ux visual|vfx|concept/.test(text)) return 'art'
+  if (/(^|\s)ui($|\s)|ui设计|interface/.test(text)) return 'art_ui'
+  if (/(^|\s)ue($|\s)|ue设计|user experience|ux/.test(text)) return 'art_ue'
+  if (/场景|scene|environment/.test(text)) return 'art_scene'
+  if (/原画|concept art|concept|illustration/.test(text)) return 'art_concept'
   if (/qa|test|测试|verify|verification/.test(text)) return 'qa'
   return 'ops'
 }
@@ -23,9 +29,9 @@ function classifyManager(agent) {
 }
 
 const WORK_ZONES = {
-  design: {
-    title: '策划',
-    description: '系统、玩法、交互和文案相关席位。',
+  design_numeric: {
+    title: '数值策划',
+    description: '数值、平衡、成长和经济相关席位。',
     icon: PencilRuler,
     propIcon: StickyNote,
     sectionClass: 'border-rose-100 dark:border-rose-400/10 bg-gradient-to-br from-white to-rose-50/65 dark:from-slate-900 dark:to-rose-950/10',
@@ -34,6 +40,42 @@ const WORK_ZONES = {
     deskClass: 'from-rose-200 to-pink-200 dark:from-rose-400/20 dark:to-pink-500/20',
     screenClass: 'from-rose-500 to-pink-500',
     chairClass: 'from-pink-300/80 to-rose-500/80 dark:from-pink-400/30 dark:to-rose-600/30',
+  },
+  design_system: {
+    title: '系统策划',
+    description: '系统结构、规则组织和功能框架相关席位。',
+    icon: PencilRuler,
+    propIcon: StickyNote,
+    sectionClass: 'border-violet-100 dark:border-violet-400/10 bg-gradient-to-br from-white to-violet-50/65 dark:from-slate-900 dark:to-violet-950/10',
+    cardClass: 'border-violet-100 dark:border-violet-400/10 bg-gradient-to-br from-white to-violet-50/55 dark:from-slate-900 dark:to-violet-950/10',
+    iconClass: 'from-violet-400 to-indigo-500',
+    deskClass: 'from-violet-200 to-indigo-200 dark:from-violet-400/20 dark:to-indigo-500/20',
+    screenClass: 'from-violet-500 to-indigo-500',
+    chairClass: 'from-indigo-300/80 to-violet-500/80 dark:from-indigo-400/30 dark:to-violet-600/30',
+  },
+  design_combat: {
+    title: '战斗策划',
+    description: '战斗循环、技能、敌人和判定相关席位。',
+    icon: PencilRuler,
+    propIcon: StickyNote,
+    sectionClass: 'border-red-100 dark:border-red-400/10 bg-gradient-to-br from-white to-red-50/65 dark:from-slate-900 dark:to-red-950/10',
+    cardClass: 'border-red-100 dark:border-red-400/10 bg-gradient-to-br from-white to-red-50/55 dark:from-slate-900 dark:to-red-950/10',
+    iconClass: 'from-red-400 to-rose-500',
+    deskClass: 'from-red-200 to-rose-200 dark:from-red-400/20 dark:to-rose-500/20',
+    screenClass: 'from-red-500 to-rose-500',
+    chairClass: 'from-rose-300/80 to-red-500/80 dark:from-rose-400/30 dark:to-red-600/30',
+  },
+  design_level: {
+    title: '关卡策划',
+    description: '流程、地图、波次和关卡节奏相关席位。',
+    icon: PencilRuler,
+    propIcon: StickyNote,
+    sectionClass: 'border-amber-100 dark:border-amber-400/10 bg-gradient-to-br from-white to-amber-50/65 dark:from-slate-900 dark:to-amber-950/10',
+    cardClass: 'border-amber-100 dark:border-amber-400/10 bg-gradient-to-br from-white to-amber-50/55 dark:from-slate-900 dark:to-amber-950/10',
+    iconClass: 'from-amber-400 to-orange-500',
+    deskClass: 'from-amber-200 to-orange-200 dark:from-amber-400/20 dark:to-orange-500/20',
+    screenClass: 'from-amber-500 to-orange-500',
+    chairClass: 'from-orange-300/80 to-amber-500/80 dark:from-orange-400/30 dark:to-amber-600/30',
   },
   engineering: {
     title: '程序',
@@ -47,9 +89,9 @@ const WORK_ZONES = {
     screenClass: 'from-slate-700 to-indigo-500',
     chairClass: 'from-indigo-300/80 to-sky-500/80 dark:from-indigo-400/30 dark:to-sky-600/30',
   },
-  art: {
-    title: '美术',
-    description: '概念、美术、UI 和视觉相关席位。',
+  art_ui: {
+    title: 'UI',
+    description: '界面视觉、版式和组件表现相关席位。',
     icon: Palette,
     propIcon: Paintbrush,
     sectionClass: 'border-fuchsia-100 dark:border-fuchsia-400/10 bg-gradient-to-br from-white to-fuchsia-50/65 dark:from-slate-900 dark:to-fuchsia-950/10',
@@ -58,6 +100,42 @@ const WORK_ZONES = {
     deskClass: 'from-fuchsia-200 to-violet-200 dark:from-fuchsia-400/20 dark:to-violet-500/20',
     screenClass: 'from-fuchsia-500 to-violet-500',
     chairClass: 'from-violet-300/80 to-fuchsia-500/80 dark:from-violet-400/30 dark:to-fuchsia-600/30',
+  },
+  art_ue: {
+    title: 'UE',
+    description: '体验细节、交互动效和使用感优化相关席位。',
+    icon: Palette,
+    propIcon: Paintbrush,
+    sectionClass: 'border-indigo-100 dark:border-indigo-400/10 bg-gradient-to-br from-white to-indigo-50/65 dark:from-slate-900 dark:to-indigo-950/10',
+    cardClass: 'border-indigo-100 dark:border-indigo-400/10 bg-gradient-to-br from-white to-indigo-50/55 dark:from-slate-900 dark:to-indigo-950/10',
+    iconClass: 'from-indigo-400 to-blue-500',
+    deskClass: 'from-indigo-200 to-blue-200 dark:from-indigo-400/20 dark:to-blue-500/20',
+    screenClass: 'from-indigo-500 to-blue-500',
+    chairClass: 'from-blue-300/80 to-indigo-500/80 dark:from-blue-400/30 dark:to-indigo-600/30',
+  },
+  art_scene: {
+    title: '场景',
+    description: '环境、地图表现和空间氛围相关席位。',
+    icon: Palette,
+    propIcon: Paintbrush,
+    sectionClass: 'border-emerald-100 dark:border-emerald-400/10 bg-gradient-to-br from-white to-emerald-50/65 dark:from-slate-900 dark:to-emerald-950/10',
+    cardClass: 'border-emerald-100 dark:border-emerald-400/10 bg-gradient-to-br from-white to-emerald-50/55 dark:from-slate-900 dark:to-emerald-950/10',
+    iconClass: 'from-emerald-400 to-teal-500',
+    deskClass: 'from-emerald-200 to-teal-200 dark:from-emerald-400/20 dark:to-teal-500/20',
+    screenClass: 'from-emerald-500 to-teal-500',
+    chairClass: 'from-teal-300/80 to-emerald-500/80 dark:from-teal-400/30 dark:to-emerald-600/30',
+  },
+  art_concept: {
+    title: '原画',
+    description: '角色、立绘、概念和风格板相关席位。',
+    icon: Palette,
+    propIcon: Paintbrush,
+    sectionClass: 'border-pink-100 dark:border-pink-400/10 bg-gradient-to-br from-white to-pink-50/65 dark:from-slate-900 dark:to-pink-950/10',
+    cardClass: 'border-pink-100 dark:border-pink-400/10 bg-gradient-to-br from-white to-pink-50/55 dark:from-slate-900 dark:to-pink-950/10',
+    iconClass: 'from-pink-400 to-fuchsia-500',
+    deskClass: 'from-pink-200 to-fuchsia-200 dark:from-pink-400/20 dark:to-fuchsia-500/20',
+    screenClass: 'from-pink-500 to-fuchsia-500',
+    chairClass: 'from-fuchsia-300/80 to-pink-500/80 dark:from-fuchsia-400/30 dark:to-pink-600/30',
   },
   qa: {
     title: 'QA',
@@ -103,9 +181,10 @@ export default function StudioFloorCard({
 
   const groupedWorkers = workers.reduce((acc, agent) => {
     const key = classifyWorker(agent)
+    if (!acc[key]) acc[key] = []
     acc[key].push(agent)
     return acc
-  }, { design: [], engineering: [], art: [], qa: [], ops: [] })
+  }, Object.fromEntries(Object.keys(WORK_ZONES).map(key => [key, []])))
 
   const [mode, setMode] = React.useState(() => {
     try { return localStorage.getItem('studio-floor-mode') || 'classic' } catch { return 'classic' }
