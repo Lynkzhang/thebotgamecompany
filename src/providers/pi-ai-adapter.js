@@ -167,6 +167,7 @@ export async function callModel(piModel, systemPrompt, messages, tools, opts = {
 function normalizeResponse(assistantMsg) {
   let textContent = '';
   const toolCalls = [];
+  const imageBlocks = [];
 
   for (const block of assistantMsg.content) {
     if (block.type === 'text') {
@@ -176,6 +177,12 @@ function normalizeResponse(assistantMsg) {
         id: block.id,
         name: block.name,
         input: block.arguments,
+      });
+    } else if (block.type === 'image') {
+      // Multimodal model returned an image (e.g. Gemini image generation)
+      imageBlocks.push({
+        mimeType: block.mimeType || 'image/png',
+        data: block.data, // base64-encoded image data
       });
     }
     // thinking blocks are handled internally by pi-ai
@@ -192,6 +199,7 @@ function normalizeResponse(assistantMsg) {
     role: 'assistant',
     content: textContent,
     toolCalls,
+    imageBlocks,
     stopReason: stopReasonMap[assistantMsg.stopReason] || 'end_turn',
     usage: {
       inputTokens: assistantMsg.usage?.input || 0,

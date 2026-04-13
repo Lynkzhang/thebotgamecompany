@@ -147,7 +147,7 @@ function mapToolsToOpenAI(tools) {
   }));
 }
 
-function buildPiAssistantMessage(textParts, toolCalls, stopReason, usage = {}) {
+function buildPiAssistantMessage(textParts, toolCalls, stopReason, usage = {}, imageBlocks = []) {
   return {
     role: 'assistant',
     content: [
@@ -157,6 +157,11 @@ function buildPiAssistantMessage(textParts, toolCalls, stopReason, usage = {}) {
         id: toolCall.id,
         name: toolCall.name,
         arguments: toolCall.input,
+      })),
+      ...imageBlocks.map(img => ({
+        type: 'image',
+        mimeType: img.mimeType || 'image/png',
+        data: img.data,
       })),
     ],
     stopReason,
@@ -173,11 +178,21 @@ function parseOpenAIResponse(data) {
   const choice = data?.choices?.[0];
   const message = choice?.message || {};
   const textParts = [];
+  const imageBlocks = [];
   if (typeof message.content === 'string') {
     textParts.push(message.content);
   } else if (Array.isArray(message.content)) {
     for (const part of message.content) {
-      if (part?.type === 'text' && part.text) textParts.push(part.text);
+      if (part?.type === 'text' && part.text) {
+        textParts.push(part.text);
+      } else if (part?.type === 'image_url' && part.image_url?.url) {
+        // Inline base64 image from multimodal generation models
+        const url = part.image_url.url;
+        const m = url.match(/^data:(image\/[a-z+]+);base64,(.+)$/i);
+        if (m) {
+          imageBlocks.push({ mimeType: m[1], data: m[2] });
+        }
+      }
     }
   }
 
@@ -209,11 +224,12 @@ function parseOpenAIResponse(data) {
     role: 'assistant',
     content: textParts.join('\n'),
     toolCalls,
+    imageBlocks,
     stopReason,
     usage,
     cost: 0,
     resultText: textParts.join('\n'),
-    _piMessage: buildPiAssistantMessage(textParts, toolCalls, stopReason === 'tool_use' ? 'toolUse' : stopReason === 'max_tokens' ? 'length' : 'stop', usage),
+    _piMessage: buildPiAssistantMessage(textParts, toolCalls, stopReason === 'tool_use' ? 'toolUse' : stopReason === 'max_tokens' ? 'length' : 'stop', usage, imageBlocks),
   };
 }
 
@@ -291,6 +307,7 @@ function parseResponsesResponse(data) {
   const output = Array.isArray(data?.output) ? data.output : [];
   const textParts = [];
   const toolCalls = [];
+  const imageBlocks = [];
 
   for (const item of output) {
     if (item?.type === 'message') {
@@ -298,6 +315,15 @@ function parseResponsesResponse(data) {
       for (const block of content) {
         if ((block?.type === 'output_text' || block?.type === 'text') && block.text) {
           textParts.push(block.text);
+        } else if (block?.type === 'output_image' || block?.type === 'image') {
+          // Inline image from multimodal generation (e.g. gpt-image-1, Gemini)
+          const b64 = block.image_url || block.data || block.b64_json || '';
+          const mime = block.mime_type || block.mimeType || 'image/png';
+          if (b64) {
+            // Strip data-url prefix if present
+            const raw = b64.replace(/^data:[^;]+;base64,/, '');
+            imageBlocks.push({ mimeType: mime, data: raw });
+          }
         }
       }
       continue;
@@ -333,11 +359,12 @@ function parseResponsesResponse(data) {
     role: 'assistant',
     content: textParts.join('\n'),
     toolCalls,
+    imageBlocks,
     stopReason,
     usage,
     cost: 0,
     resultText: textParts.join('\n'),
-    _piMessage: buildPiAssistantMessage(textParts, toolCalls, stopReason === 'tool_use' ? 'toolUse' : stopReason === 'max_tokens' ? 'length' : 'stop', usage),
+    _piMessage: buildPiAssistantMessage(textParts, toolCalls, stopReason === 'tool_use' ? 'toolUse' : stopReason === 'max_tokens' ? 'length' : 'stop', usage, imageBlocks),
   };
 }
 
@@ -415,6 +442,7 @@ function parseAnthropicResponse(data) {
   const content = Array.isArray(data?.content) ? data.content : [];
   const textParts = [];
   const toolCalls = [];
+  const imageBlocks = [];
   for (const block of content) {
     if (block.type === 'text') {
       textParts.push(block.text || '');
@@ -426,6 +454,17 @@ function parseAnthropicResponse(data) {
         name: block.name,
         input: block.input || {},
       });
+      continue;
+    }
+    if (block.type === 'image') {
+      // Anthropic image output block
+      const source = block.source || {};
+      if (source.type === 'base64' && source.data) {
+        imageBlocks.push({
+          mimeType: source.media_type || 'image/png',
+          data: source.data,
+        });
+      }
     }
   }
 
@@ -433,6 +472,7 @@ function parseAnthropicResponse(data) {
     role: 'assistant',
     content: textParts.join('\n'),
     toolCalls,
+    imageBlocks,
     stopReason: data?.stop_reason === 'tool_use' ? 'tool_use' : data?.stop_reason === 'max_tokens' ? 'max_tokens' : 'end_turn',
     usage: {
       inputTokens: data?.usage?.input_tokens || 0,
@@ -449,6 +489,7 @@ function parseAnthropicResponse(data) {
         outputTokens: data?.usage?.output_tokens || 0,
         cacheReadTokens: 0,
       },
+      imageBlocks,
     ),
   };
 }

@@ -1325,6 +1325,32 @@ export async function runAgentWithAPI(opts) {
         lastResultText = response.content;
       }
 
+      // Handle inline image output from multimodal generation models
+      // (e.g. Gemini image generation, gpt-image-1)
+      if (response.imageBlocks && response.imageBlocks.length > 0) {
+        const assetsDir = path.join(cwd, 'assets', 'generated');
+        fs.mkdirSync(assetsDir, { recursive: true });
+        const savedPaths = [];
+        for (const img of response.imageBlocks) {
+          const ext = img.mimeType === 'image/jpeg' ? '.jpg'
+            : img.mimeType === 'image/webp' ? '.webp'
+            : '.png';
+          const filename = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+          const savePath = path.join(assetsDir, filename);
+          try {
+            fs.writeFileSync(savePath, Buffer.from(img.data, 'base64'));
+            savedPaths.push(path.relative(cwd, savePath).replace(/\\/g, '/'));
+            log(`Generated image saved: ${savePath}`);
+          } catch (writeErr) {
+            log(`Failed to save generated image: ${writeErr.message}`);
+          }
+        }
+        if (savedPaths.length > 0) {
+          const imageInfo = `\n\n[System: ${savedPaths.length} image(s) generated and saved to repo:\n${savedPaths.map(p => `  - ${p}`).join('\n')}\n]`;
+          lastResultText = (lastResultText || '') + imageInfo;
+        }
+      }
+
       // Check stop reason
       if (response.stopReason === 'end_turn' || response.stopReason === 'max_tokens') {
         return makeResult(true, lastResultText);
