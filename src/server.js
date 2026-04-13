@@ -711,6 +711,22 @@ class ProjectRunner {
       const match = content.match(/^#\s*\w+\s*\(([^)]+)\)/m);
       return match ? match[1] : null;
     };
+
+    const enforceWorkerRoleFrontmatter = (filePath, content, lockedRole) => {
+      if (!lockedRole) return content;
+      let next = content;
+      if (next.startsWith('---')) {
+        if (/^role:\s*.+$/m.test(next)) {
+          next = next.replace(/^role:\s*.+$/m, `role: ${lockedRole}`);
+        } else {
+          next = next.replace(/^---\n/, `---\nrole: ${lockedRole}\n`);
+        }
+      } else {
+        next = `---\nrole: ${lockedRole}\n---\n${next}`;
+      }
+      if (next !== content) fs.writeFileSync(filePath, next);
+      return next;
+    };
     
     const shortenModel = (model) => {
       if (!model) return null;
@@ -742,10 +758,10 @@ class ProjectRunner {
       INSERT INTO agents (name, role, reports_to, model)
       VALUES (?, ?, ?, ?)
       ON CONFLICT(name) DO UPDATE SET
-        role = excluded.role,
         reports_to = excluded.reports_to
     `);
     const updateStoredModel = db.prepare('UPDATE agents SET model = ? WHERE name = ?');
+    const updateStoredRole = db.prepare('UPDATE agents SET role = ? WHERE name = ?');
     
     if (fs.existsSync(managersDir)) {
       for (const file of fs.readdirSync(managersDir)) {
@@ -769,19 +785,28 @@ class ProjectRunner {
         if (file.endsWith('.md')) {
           const name = normalizeAgentName(file.replace('.md', ''));
           if (RESERVED_MANAGER_NAMES.has(name)) continue;
-          const content = fs.readFileSync(path.join(workersDir, file), 'utf-8');
+          const skillPath = path.join(workersDir, file);
+          let content = fs.readFileSync(skillPath, 'utf-8');
           if (/^disabled:\s*true$/m.test(content)) continue;
           const reportsTo = normalizeAgentName((content.match(/^reports_to:\s*(.+)$/m) || [])[1]?.trim() || null);
           const role = parseRole(content);
           const frontmatterModel = (content.match(/^model:\s*(.+)$/m) || [])[1]?.trim() || null;
           const stored = getStoredAgent.get(name);
           upsertAgentMeta.run(name, role, reportsTo, frontmatterModel);
+          let effectiveRole = stored?.role || role;
+          if (!stored?.role && role) {
+            updateStoredRole.run(role, name);
+            effectiveRole = role;
+          } else if (stored?.role && role !== stored.role) {
+            content = enforceWorkerRoleFrontmatter(skillPath, content, stored.role);
+            effectiveRole = stored.role;
+          }
           let rawModel = stored?.model || frontmatterModel;
           if (!stored?.model && frontmatterModel) {
             updateStoredModel.run(frontmatterModel, name);
             rawModel = frontmatterModel;
           }
-          workers.push({ name, role, model: shortenModel(rawModel), rawModel, isManager: false, reportsTo });
+          workers.push({ name, role: effectiveRole, model: shortenModel(rawModel), rawModel, isManager: false, reportsTo });
         }
       }
     }

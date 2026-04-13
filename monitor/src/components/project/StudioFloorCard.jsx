@@ -166,9 +166,9 @@ export default function StudioFloorCard({
         <div className="space-y-3">
           <div className="grid gap-3 lg:grid-cols-[1.25fr_1fr] items-start">
             <div className="rounded-[22px] border border-fuchsia-200/80 dark:border-fuchsia-300/15 bg-gradient-to-br from-white via-fuchsia-50/70 to-violet-50/70 dark:from-slate-900 dark:via-fuchsia-950/10 dark:to-violet-950/10 p-3 min-h-[158px]">
-                <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-white/70 dark:bg-white/8 border border-fuchsia-100 dark:border-fuchsia-300/10 text-[11px] uppercase tracking-[0.22em] text-fuchsia-500 dark:text-fuchsia-300">
+                <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-white/80 dark:bg-slate-900/75 border border-fuchsia-100 dark:border-white/12 text-[11px] uppercase tracking-[0.22em] text-fuchsia-500 dark:text-white shadow-sm">
                   <span>主会议席</span>
-                  <span className="text-xs">✦</span>
+                  <span className="text-xs opacity-80">✦</span>
                 </div>
               <div className="grid gap-3">
                 {groupedManagers.producer.map((agent) => (
@@ -179,9 +179,9 @@ export default function StudioFloorCard({
             </div>
 
             <div className="rounded-[22px] border border-violet-100 dark:border-violet-300/10 bg-gradient-to-br from-white to-violet-50/65 dark:from-slate-900 dark:to-violet-950/10 p-3 min-h-[158px]">
-              <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-white/70 dark:bg-white/8 border border-violet-100 dark:border-violet-300/10 text-[11px] uppercase tracking-[0.22em] text-violet-500 dark:text-violet-300">
+              <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-white/80 dark:bg-slate-900/75 border border-violet-100 dark:border-white/12 text-[11px] uppercase tracking-[0.22em] text-violet-500 dark:text-white shadow-sm">
                 <span>调度排班台</span>
-                <span className="text-xs">✦</span>
+                <span className="text-xs opacity-80">✦</span>
               </div>
               <div className="grid gap-3">
                 {groupedManagers.pm.map((agent) => (
@@ -225,7 +225,7 @@ export default function StudioFloorCard({
                 <div className="flex items-center gap-2 mb-3">
                   <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${zone.iconClass} flex items-center justify-center text-white shadow-sm`}><Icon className="w-4 h-4" /></div>
                   <div>
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 dark:bg-white/8 border border-white/70 dark:border-white/10 text-sm font-semibold text-neutral-800 dark:text-neutral-100"><span>{zone.title}</span><span className="text-xs opacity-70">✦</span></div>
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 dark:bg-slate-900/75 border border-white/70 dark:border-white/12 text-sm font-semibold text-neutral-800 dark:text-white shadow-sm"><span>{zone.title}</span><span className="text-xs opacity-80">✦</span></div>
                     <div className="text-xs text-neutral-500 dark:text-neutral-400">{zone.description}</div>
                   </div>
                 </div>
@@ -273,7 +273,7 @@ export default function StudioFloorCard({
                 <div key={zoneKey} className={`rounded-[20px] border p-4 ${zone.sectionClass}`}>
                   <div className="flex items-center gap-2 mb-3">
                     <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${zone.iconClass} flex items-center justify-center text-white shadow-sm`}><Icon className="w-4 h-4" /></div>
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/75 dark:bg-white/8 border border-white/70 dark:border-white/10 text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 dark:bg-slate-900/75 border border-white/70 dark:border-white/12 text-sm font-semibold text-neutral-800 dark:text-white shadow-sm">
                       {zone.title}<span className="text-xs opacity-70">✦</span>
                     </div>
                   </div>
