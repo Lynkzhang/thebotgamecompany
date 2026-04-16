@@ -1,5 +1,5 @@
 ---
-model: dashscope/qwen3.6-plus
+model: aws/claude-sonnet-4-6
 role: PM
 ---
 # PM

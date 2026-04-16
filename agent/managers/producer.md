@@ -1,5 +1,5 @@
 ---
-model: dashscope/qwen3.6-plus
+model: aws/claude-opus-4-6
 role: 执行制作人
 ---
 # 执行制作人

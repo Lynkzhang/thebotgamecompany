@@ -227,7 +227,7 @@ const MODEL_TIERS = {
   },
   dashscope: {
     high:  { model: 'dashscope/qwen3.6-plus', reasoningEffort: 'high' },
-    mid:   { model: 'dashscope/qwen3.6-plus', reasoningEffort: 'medium' },
+    mid:   { model: 'dashscope/qwen3.5-plus', reasoningEffort: 'medium' },
     low:   { model: 'dashscope/qwen3.5-flash' },
     xlow:  { model: 'dashscope/qwen3.5-flash' },
   },
