@@ -5,6 +5,13 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import SleepCountdown from '@/components/layout/SleepCountdown'
 
+function formatToken(n) {
+  if (n == null || n === 0) return '0'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
+
 export function OrchestratorStateCard({ selectedProject, globalUptime, controlAction, isWriteMode }) {
   const activeAgents = selectedProject.activeAgents || []
   const activeLabel = activeAgents.length > 1
@@ -172,6 +179,31 @@ export function CostBudgetCard({ selectedProject, setBudgetInfoModal, configForm
           <div className="flex justify-between items-center">
             <span className="text-neutral-600 dark:text-neutral-300">累计</span>
             <span className="text-sm font-mono">${(selectedProject.cost?.totalCost || 0).toFixed(2)}</span>
+          </div>
+          <div className="pt-2 border-t border-neutral-100 dark:border-neutral-700/50">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-[11px] font-semibold text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Token 统计</span>
+              <span className="text-[11px] text-neutral-400 dark:text-neutral-500">
+                <span className="font-mono">{selectedProject.cost?.tokens ? formatToken(selectedProject.cost.tokens.last24hInput) : '0'}</span>
+                {' in / '}
+                <span className="font-mono">{selectedProject.cost?.tokens ? formatToken(selectedProject.cost.tokens.last24hOutput) : '0'}</span>
+                {' out (24h)'}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1 text-[10px] text-neutral-400 dark:text-neutral-500">
+              <div className="flex flex-col items-center py-1 rounded bg-neutral-50 dark:bg-neutral-800/50">
+                <span className="font-mono text-neutral-600 dark:text-neutral-300 font-medium text-[11px]">{selectedProject.cost?.tokens ? formatToken(selectedProject.cost.tokens.totalInput) : '0'}</span>
+                <span>输入</span>
+              </div>
+              <div className="flex flex-col items-center py-1 rounded bg-neutral-50 dark:bg-neutral-800/50">
+                <span className="font-mono text-neutral-600 dark:text-neutral-300 font-medium text-[11px]">{selectedProject.cost?.tokens ? formatToken(selectedProject.cost.tokens.totalOutput) : '0'}</span>
+                <span>输出</span>
+              </div>
+              <div className="flex flex-col items-center py-1 rounded bg-neutral-50 dark:bg-neutral-800/50">
+                <span className="font-mono text-neutral-600 dark:text-neutral-300 font-medium text-[11px]">{selectedProject.cost?.tokens ? formatToken(selectedProject.cost.tokens.totalCacheRead) : '0'}</span>
+                <span>缓存读</span>
+              </div>
+            </div>
           </div>
           {selectedProject.budget && (
             <>

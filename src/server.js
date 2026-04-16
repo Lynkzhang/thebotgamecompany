@@ -1048,20 +1048,17 @@ class ProjectRunner {
   }
 
   getCostSummary() {
-    const empty = { totalCost: 0, last24hCost: 0, lastCycleCost: 0, avgCycleCost: 0, lastCycleDuration: 0, avgCycleDuration: 0, agents: {} };
+    const empty = { totalCost: 0, last24hCost: 0, lastCycleCost: 0, avgCycleCost: 0, lastCycleDuration: 0, avgCycleDuration: 0, agents: {}, tokens: { totalInput: 0, totalOutput: 0, totalCacheRead: 0, last24hInput: 0, last24hOutput: 0, last24hCacheRead: 0 } };
     try {
       const db = this.getDb();
-      // Ensure cost columns exist (migration)
       try { db.exec('ALTER TABLE reports ADD COLUMN cost REAL'); } catch {}
       try { db.exec('ALTER TABLE reports ADD COLUMN duration_ms INTEGER'); } catch {}
 
       const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-      // Total cost
       const totalCost = db.prepare('SELECT COALESCE(SUM(cost), 0) as v FROM reports').get().v;
       const last24hCost = db.prepare('SELECT COALESCE(SUM(cost), 0) as v FROM reports WHERE created_at > ?').get(cutoff).v;
 
-      // Per-cycle data
       const cycles = db.prepare('SELECT cycle, SUM(cost) as cost, SUM(duration_ms) as duration FROM reports WHERE cost IS NOT NULL GROUP BY cycle ORDER BY cycle ASC').all();
       let lastCycleCost = 0, avgCycleCost = 0, lastCycleDuration = 0, avgCycleDuration = 0;
       if (cycles.length > 0) {
@@ -1074,7 +1071,6 @@ class ProjectRunner {
         avgCycleDuration = totalCycleDuration / cycles.length;
       }
 
-      // Per-agent data
       const agentRows = db.prepare(`SELECT agent,
         COALESCE(SUM(cost), 0) as totalCost,
         COALESCE(SUM(CASE WHEN created_at > ? THEN cost ELSE 0 END), 0) as last24hCost,
@@ -1092,9 +1088,27 @@ class ProjectRunner {
         };
       }
 
+      const tokenRow = db.prepare(`SELECT
+        COALESCE(SUM(input_tokens), 0) as totalInput,
+        COALESCE(SUM(output_tokens), 0) as totalOutput,
+        COALESCE(SUM(cache_read_tokens), 0) as totalCacheRead,
+        COALESCE(SUM(CASE WHEN created_at > ? THEN input_tokens ELSE 0 END), 0) as last24hInput,
+        COALESCE(SUM(CASE WHEN created_at > ? THEN output_tokens ELSE 0 END), 0) as last24hOutput,
+        COALESCE(SUM(CASE WHEN created_at > ? THEN cache_read_tokens ELSE 0 END), 0) as last24hCacheRead
+        FROM reports`).get(cutoff, cutoff, cutoff);
+
+      const tokens = {
+        totalInput: tokenRow.totalInput || 0,
+        totalOutput: tokenRow.totalOutput || 0,
+        totalCacheRead: tokenRow.totalCacheRead || 0,
+        last24hInput: tokenRow.last24hInput || 0,
+        last24hOutput: tokenRow.last24hOutput || 0,
+        last24hCacheRead: tokenRow.last24hCacheRead || 0,
+      };
+
       db.close();
 
-      return { totalCost, last24hCost, lastCycleCost, avgCycleCost, lastCycleDuration, avgCycleDuration, agents };
+      return { totalCost, last24hCost, lastCycleCost, avgCycleCost, lastCycleDuration, avgCycleDuration, agents, tokens };
     } catch {
       return empty;
     }
