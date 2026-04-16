@@ -1,5 +1,5 @@
 ---
-model: claude-opus-4-6
+model: dashscope/qwen3.6-plus
 role: 执行制作人
 ---
 # 执行制作人

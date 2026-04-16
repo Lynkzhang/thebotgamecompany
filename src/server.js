@@ -60,7 +60,7 @@ function maskToken(token) {
 
 function detectTokenProvider(token) {
   if (!token) return null;
-  if (token.startsWith('sk-ant-')) return 'anthropic';
+  if (token.startsWith('sk-ant-')) return 'aws';
   if (token.startsWith('sk-proj-') || token.startsWith('sk-')) return 'openai';
   if (token.startsWith('AIzaSy')) return 'google';
   // MiniMax keys cannot be reliably auto-detected by prefix.
@@ -213,17 +213,23 @@ function saveGlobalSettings(settings) {
 
 // Model tier system — maps abstract tiers to provider-specific models
 const MODEL_TIERS = {
-  anthropic: {
+  aws: {
     high:  { model: 'claude-opus-4-6', reasoningEffort: 'high' },
     mid:   { model: 'claude-sonnet-4-6', reasoningEffort: 'high' },
     low:   { model: 'claude-sonnet-4-6' },
     xlow:  { model: 'claude-haiku-4-5-20251001' },
   },
-  openai: {
-    high:  { model: 'gpt-5.3-codex', reasoningEffort: 'xhigh' },
-    mid:   { model: 'gpt-5.3-codex', reasoningEffort: 'high' },
-    low:   { model: 'gpt-5.3-codex', reasoningEffort: 'medium' },
-    xlow:  { model: 'gpt-4.1-mini' },
+  azure: {
+    high:  { model: 'gpt-5.4', reasoningEffort: 'high' },
+    mid:   { model: 'gpt-5.4', reasoningEffort: 'medium' },
+    low:   { model: 'gpt-5.4-mini' },
+    xlow:  { model: 'gpt-5.4-nano' },
+  },
+  dashscope: {
+    high:  { model: 'dashscope/qwen3.6-plus', reasoningEffort: 'high' },
+    mid:   { model: 'dashscope/qwen3.6-plus', reasoningEffort: 'medium' },
+    low:   { model: 'dashscope/qwen3.5-flash' },
+    xlow:  { model: 'dashscope/qwen3.5-flash' },
   },
   google: {
     high:  { model: 'gemini-3.1-pro-preview', reasoningEffort: 'high' },
@@ -231,27 +237,35 @@ const MODEL_TIERS = {
     low:   { model: 'gemini-3-flash-preview' },
     xlow:  { model: 'gemini-3-flash-preview' },
   },
-  minimax: {
-    high:  { model: 'minimax/MiniMax-M2.5' },
-    mid:   { model: 'minimax/MiniMax-M2.5' },
-    low:   { model: 'minimax/MiniMax-M2.5' },
-    xlow:  { model: 'minimax/MiniMax-M2.5' },
+  openai: {
+    high:  { model: 'gpt-5.4', reasoningEffort: 'high' },
+    mid:   { model: 'gpt-5.4', reasoningEffort: 'medium' },
+    low:   { model: 'gpt-5.4-mini' },
+    xlow:  { model: 'gpt-5.4-nano' },
   },
-  'openai-codex': {
-    high:  { model: 'openai-codex/gpt-5.3-codex', reasoningEffort: 'xhigh' },
-    mid:   { model: 'openai-codex/gpt-5.3-codex', reasoningEffort: 'high' },
-    low:   { model: 'openai-codex/gpt-5.3-codex', reasoningEffort: 'medium' },
-    xlow:  { model: 'openai-codex/gpt-5.3-codex', reasoningEffort: 'low' },
+  vertex_ai: {
+    high:  { model: 'vertex_ai/gemini-3.1-pro-preview', reasoningEffort: 'high' },
+    mid:   { model: 'vertex_ai/gemini-3.1-pro-preview', reasoningEffort: 'medium' },
+    low:   { model: 'vertex_ai/gemini-3-flash-preview' },
+    xlow:  { model: 'vertex_ai/gemini-3-flash-preview' },
+  },
+  zenlayer: {
+    high:  { model: 'zenlayer/claude-opus-4-6', reasoningEffort: 'high' },
+    mid:   { model: 'zenlayer/claude-sonnet-4-6', reasoningEffort: 'high' },
+    low:   { model: 'zenlayer/claude-haiku-4-5-20251001' },
+    xlow:  { model: 'zenlayer/claude-haiku-4-5-20251001' },
   },
 };
 
 const EFFORT_LEVELS = ['medium', 'high', 'xhigh'];
 const ALLOWED_MODELS = {
-  anthropic: /^claude-(opus|sonnet)-4-6$|^claude-haiku-4-5-/,
-  openai: /^(gpt-5\.[34]|o[34])/,
-  'openai-codex': /^(gpt-5\.[34])/,
-  google: /^gemini-[23]/,
-  minimax: /MiniMax/,
+  aws: /^claude-(opus|sonnet)-4-6$|^claude-haiku-4-5-/,
+  azure: /^gpt-5\.[34]|^text-embedding-/,
+  dashscope: /^dashscope\/|^qwen|^MiniMax-|^glm-/,
+  google: /^gemini-/,
+  openai: /^gpt-5\.[34]/,
+  vertex_ai: /^vertex_ai\/gemini-/,
+  zenlayer: /^zenlayer\//,
 };
 
 function resolveModelTier(tierOrModel, provider, projectModels) {
@@ -355,9 +369,9 @@ function formatModelTagSelectionGuide() {
 }
 
 function detectProviderFromToken(token) {
-  if (!token) return 'anthropic';
+  if (!token) return 'aws';
   const p = detectTokenProvider(token);
-  return (p === 'unknown' || !p) ? 'anthropic' : p;
+  return (p === 'unknown' || !p) ? 'aws' : p;
 }
 
 // Strip meta directive blocks from agent responses (keep human-readable text only)
@@ -2779,7 +2793,7 @@ class ProjectRunner {
     } else if (resolvedToken) {
       providerHint = detectProviderFromToken(resolvedToken);
     } else {
-      providerHint = 'anthropic';
+      providerHint = 'aws';
     }
 
     const runtimeSelection = getProviderRuntimeSelection({
@@ -3202,7 +3216,7 @@ const server = http.createServer(async (req, res) => {
         try { envContent = fs.readFileSync(envPath, 'utf-8'); } catch {}
 
         // Detect provider from token or explicit provider field
-        const provider = forceProvider || detectTokenProvider(token) || 'anthropic';
+        const provider = forceProvider || detectTokenProvider(token) || 'aws';
 
         // Provider → env var mapping
         const providerEnvVars = {
@@ -3221,7 +3235,7 @@ const server = http.createServer(async (req, res) => {
         if (token) {
           // Pick the right env var
           let envVar;
-          if (provider === 'anthropic') {
+          if (provider === 'aws') {
             envVar = token.startsWith('sk-ant-oat') ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY';
           } else if (provider === 'openai') {
             envVar = 'OPENAI_API_KEY';
@@ -4085,7 +4099,7 @@ const server = http.createServer(async (req, res) => {
       if (!detectedKey) {
         detectedKey = keyPool.keys.find(k => k.enabled) || null;
       }
-      const detectedProvider = detectedKey?.provider || 'anthropic';
+      const detectedProvider = detectedKey?.provider || 'aws';
       const detectedTiers = detectedProvider === 'custom' && detectedKey?.customConfig
         ? buildCustomTierMap(detectedKey.customConfig)
         : (MODEL_TIERS[detectedProvider] || {});
@@ -4337,7 +4351,7 @@ const server = http.createServer(async (req, res) => {
         };
         const poolSafe = getKeyPoolSafe();
         const firstKey = poolSafe.keys.find(k => k.enabled);
-        const providerHintForSummary = config.setupTokenProvider || firstKey?.provider || 'anthropic';
+        const providerHintForSummary = config.setupTokenProvider || firstKey?.provider || 'aws';
 
         keyResult = await resolveKeyForProject(config, providerHintForSummary, oauthGetter);
         const token = keyResult?.token || config.setupToken || null;

@@ -27,11 +27,17 @@ import { callCustomModel } from './custom-adapter.js';
 function parseTBCModel(rawModel) {
   // Explicit prefix → provider/modelId
   const prefixes = [
-    { prefix: 'openai-codex/', provider: 'openai-codex' },
-    { prefix: 'openai/',       provider: 'openai' },
-    { prefix: 'google/',       provider: 'google' },
-    { prefix: 'minimax/',      provider: 'minimax' },
-    { prefix: 'anthropic/',    provider: 'anthropic' },
+    { prefix: 'openai-codex/',  provider: 'openai' },
+    { prefix: 'openai/',      provider: 'openai' },
+    { prefix: 'azure/',      provider: 'azure' },
+    { prefix: 'vertex_ai/',  provider: 'vertex_ai' },
+    { prefix: 'google/',      provider: 'google' },
+    { prefix: 'dashscope/',  provider: 'dashscope' },
+    { prefix: 'aws/',       provider: 'aws' },
+    { prefix: 'zenlayer/',  provider: 'zenlayer' },
+    { prefix: 'mihoyo/',    provider: 'mihoyo' },
+    { prefix: 'minimax/',  provider: 'dashscope' },
+    { prefix: 'anthropic/', provider: 'aws' },
   ];
   for (const { prefix, provider } of prefixes) {
     if (rawModel.startsWith(prefix)) {
@@ -46,12 +52,24 @@ function parseTBCModel(rawModel) {
   if (rawModel.startsWith('gemini-')) {
     return { provider: 'google', modelId: rawModel };
   }
+  if (rawModel.startsWith('claude-')) {
+    return { provider: 'aws', modelId: rawModel };
+  }
+  if (rawModel.startsWith('qwen') || rawModel.startsWith('glm-')) {
+    return { provider: 'dashscope', modelId: rawModel };
+  }
   if (rawModel.startsWith('MiniMax-')) {
-    return { provider: 'minimax', modelId: rawModel };
+    return { provider: 'dashscope', modelId: rawModel };
+  }
+  if (rawModel.startsWith('text-embedding-')) {
+    return { provider: 'azure', modelId: rawModel };
+  }
+  if (rawModel.startsWith('bge-')) {
+    return { provider: 'mihoyo', modelId: rawModel };
   }
 
-  // Default → Anthropic
-  return { provider: 'anthropic', modelId: rawModel };
+  // Default → openai
+  return { provider: 'openai', modelId: rawModel };
 }
 
 /**

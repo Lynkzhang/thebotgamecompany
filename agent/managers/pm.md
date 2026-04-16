@@ -1,5 +1,5 @@
 ---
-model: mihoyo.claude-4-6-opus
+model: dashscope/qwen3.6-plus
 role: PM
 ---
 # PM

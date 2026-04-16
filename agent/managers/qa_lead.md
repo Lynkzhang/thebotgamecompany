@@ -1,5 +1,5 @@
 ---
-model: claude-sonnet-4-6
+model: dashscope/qwen3.6-plus
 role: QA 负责人
 ---
 # QA 负责人

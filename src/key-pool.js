@@ -283,12 +283,16 @@ export function migrateFromEnv(projectRunners) {
   if (pool._migrated) return;
 
   const envKeys = [
-    { envVar: 'ANTHROPIC_AUTH_TOKEN', provider: 'anthropic', label: 'Anthropic (OAuth)' },
-    { envVar: 'ANTHROPIC_API_KEY', provider: 'anthropic', label: 'Anthropic' },
+    { envVar: 'ANTHROPIC_AUTH_TOKEN', provider: 'aws', label: 'AWS Anthropic (OAuth)' },
+    { envVar: 'ANTHROPIC_API_KEY', provider: 'aws', label: 'AWS Anthropic' },
     { envVar: 'OPENAI_API_KEY', provider: 'openai', label: 'OpenAI' },
+    { envVar: 'AZURE_OPENAI_API_KEY', provider: 'azure', label: 'Azure OpenAI' },
     { envVar: 'GEMINI_API_KEY', provider: 'google', label: 'Google (Gemini)' },
     { envVar: 'GOOGLE_API_KEY', provider: 'google', label: 'Google' },
-    { envVar: 'MINIMAX_API_KEY', provider: 'minimax', label: 'MiniMax' },
+    { envVar: 'DASHSCOPE_API_KEY', provider: 'dashscope', label: 'DashScope' },
+    { envVar: 'MINIMAX_API_KEY', provider: 'dashscope', label: 'DashScope (MiniMax)' },
+    { envVar: 'ZENLAYER_API_KEY', provider: 'zenlayer', label: 'ZenLayer' },
+    { envVar: 'VERTEX_AI_API_KEY', provider: 'vertex_ai', label: 'Vertex AI' },
   ];
 
   const seen = new Set();

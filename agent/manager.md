@@ -152,7 +152,7 @@ model: mid
 ---
 reports_to: pm
 role: 美术
-model: Google/gemini-3-pro-image-preview
+model: zenlayer/gemini-3-pro-image-preview
 ---
 ```
 
