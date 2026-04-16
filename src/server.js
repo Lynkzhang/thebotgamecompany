@@ -7,6 +7,7 @@
  */
 
 import http from 'http';
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -14,7 +15,7 @@ import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
 import yaml from 'js-yaml';
 import Database from 'better-sqlite3';
-import { runAgentWithAPI } from './agent-runner.js';
+import { runAgentWithAPI, formatErrorDetails } from './agent-runner.js';
 import { listSessions as chatListSessions, createSession as chatCreateSession, getSession as chatGetSession, deleteSession as chatDeleteSession, streamChatMessage, getActiveStream, isStreaming as isChatStreaming, saveMessage as chatSaveMessage } from './chat.js';
 import { resolveModel, callModel, buildUserMessage, getModels as getPiModels } from './providers/index.js';
 import { buildCustomTierMap, buildCustomModelList, resolveProviderRuntime } from './providers/custom-config.js';
@@ -635,6 +636,62 @@ class ProjectRunner {
 
   get agentDir() {
     return path.join(this.projectDir, 'workspace');
+  }
+
+  get checkpointsDir() {
+    return path.join(this.agentDir, 'checkpoints');
+  }
+
+  _getAgentCheckpointPath(agentName) {
+    return path.join(this.checkpointsDir, `${normalizeAgentName(agentName)}.json`);
+  }
+
+  _buildAgentResumeKey(agent, prompt, model, visibility = null) {
+    return crypto.createHash('sha256').update(JSON.stringify({
+      agent: normalizeAgentName(agent?.name || ''),
+      model,
+      prompt,
+      visibilityMode: visibility?.mode || 'full',
+      visibilityIssues: visibility?.issues || [],
+    })).digest('hex');
+  }
+
+  _loadAgentCheckpoint(agent, resumeKey) {
+    const checkpointPath = this._getAgentCheckpointPath(agent.name);
+    try {
+      if (!fs.existsSync(checkpointPath)) return null;
+      const checkpoint = JSON.parse(fs.readFileSync(checkpointPath, 'utf-8'));
+      if (!checkpoint || checkpoint.resumeKey !== resumeKey || !checkpoint.state) return null;
+      return checkpoint;
+    } catch (e) {
+      log(`Failed to load checkpoint for ${agent.name}: ${e.message}`, this.id);
+      return null;
+    }
+  }
+
+  _saveAgentCheckpoint(agent, resumeKey, task, state) {
+    try {
+      fs.mkdirSync(this.checkpointsDir, { recursive: true });
+      fs.writeFileSync(this._getAgentCheckpointPath(agent.name), JSON.stringify({
+        version: 1,
+        agent: normalizeAgentName(agent.name),
+        task: task || null,
+        resumeKey,
+        updatedAt: new Date().toISOString(),
+        state,
+      }, null, 2));
+    } catch (e) {
+      log(`Failed to save checkpoint for ${agent.name}: ${e.message}`, this.id);
+    }
+  }
+
+  _clearAgentCheckpoint(agentName) {
+    const checkpointPath = this._getAgentCheckpointPath(agentName);
+    try {
+      if (fs.existsSync(checkpointPath)) fs.unlinkSync(checkpointPath);
+    } catch (e) {
+      log(`Failed to clear checkpoint for ${agentName}: ${e.message}`, this.id);
+    }
   }
 
   get skillsDir() {
@@ -2753,6 +2810,12 @@ class ProjectRunner {
     runState.model = tierLabel;
     this._refreshActiveAgentSummary();
 
+    const resumeKey = this._buildAgentResumeKey(agent, skillContent, agentModel, visibility);
+    const checkpoint = this._loadAgentCheckpoint(agent, resumeKey);
+    if (checkpoint?.state?.messageCount) {
+      log(`Resuming ${agent.name} from checkpoint (${checkpoint.state.messageCount} messages)`, this.id);
+    }
+
     const projectId = this.id;
     const result = await runAgentWithAPI({
       prompt: skillContent,
@@ -2770,8 +2833,10 @@ class ProjectRunner {
       allowedPaths: this._getAgentFilesystemPolicy(agent, visibility),
       issuePolicy: visibility || { mode: 'full', issues: [] },
       abortSignal: runAbortController.signal,
+      resumeState: checkpoint?.state || null,
       keyId: resolvedKeyId,
       onRateLimited: (kid, cooldownMs) => markRateLimited(kid, cooldownMs || 5 * 60_000),
+      onCheckpoint: (state) => this._saveAgentCheckpoint(agent, resumeKey, task, state),
       resolveNewToken: async () => {
         const newKey = await resolveKeyForProject(config, providerHint, oauthTokenGetter);
         if (newKey?.provider) {
@@ -2803,6 +2868,10 @@ class ProjectRunner {
         this._refreshActiveAgentSummary();
       },
     });
+
+    if (result.success) {
+      this._clearAgentCheckpoint(agent.name);
+    }
 
     return this._postProcessAgentRun(agent, config, runState, {
       resultText: result.resultText,
@@ -4316,15 +4385,16 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ summary }));
       } catch (e) {
-        log(`Summarize error: ${e.message}`, runner.id);
+        const detailedError = formatErrorDetails(e);
+        log(`Summarize error: ${detailedError}`, runner.id);
         // Mark key as rate-limited if the error indicates a usage/rate limit
-        if (keyResult?.keyId && isExplicitRateLimitMessage(e.message)) {
-          const cooldownMs = parseSummarizeCooldown(e.message);
+        if (keyResult?.keyId && isExplicitRateLimitMessage(detailedError)) {
+          const cooldownMs = parseSummarizeCooldown(detailedError);
           markRateLimited(keyResult.keyId, cooldownMs);
           log(`Summarize: marked key ${keyResult.keyId} rate-limited for ${Math.ceil(cooldownMs / 60_000)}m`, runner.id);
         }
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: e.message }));
+        res.end(JSON.stringify({ error: detailedError }));
       }
       return;
     }

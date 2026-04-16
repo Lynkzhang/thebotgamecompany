@@ -6,6 +6,7 @@
  */
 
 import { spawn } from 'child_process';
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -23,6 +24,37 @@ import { listConfiguredMcpServers, listMcpTools, callMcpTool } from './mcp-clien
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
+
+function cloneJson(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function normalizeResumeState(resumeState) {
+  if (!resumeState || typeof resumeState !== 'object') return null;
+  const messages = Array.isArray(resumeState.messages) ? cloneJson(resumeState.messages) : null;
+  if (!messages || messages.length === 0) return null;
+  return {
+    messages,
+    lastResultText: typeof resumeState.lastResultText === 'string' ? resumeState.lastResultText : '',
+    lastInputTokens: Number.isFinite(resumeState.lastInputTokens) ? resumeState.lastInputTokens : 0,
+  };
+}
+
+function buildResumeCheckpoint(messages, lastResultText = '', lastInputTokens = 0) {
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    messageCount: Array.isArray(messages) ? messages.length : 0,
+    messageDigest: crypto.createHash('sha1').update(JSON.stringify(messages || [])).digest('hex'),
+    messages: cloneJson(messages || []),
+    lastResultText,
+    lastInputTokens,
+  };
+}
+
+function shouldCompactHistory(lastInputTokens, messageCount) {
+  return lastInputTokens > 120000 || messageCount > 120;
+}
 
 // ---------------------------------------------------------------------------
 // Parse retry cooldown from error messages
@@ -49,6 +81,29 @@ function parseRetryCooldown(message) {
   if (retryAfter) return parseInt(retryAfter[1]) * 1000;
 
   return 5 * 60_000; // default 5 min
+}
+
+function formatErrorDetails(err) {
+  if (!err) return 'Unknown error';
+
+  const parts = [];
+  const message = String(err.message || err);
+  if (message) parts.push(message);
+  if (err.status) parts.push(`status=${err.status}`);
+  if (err.code) parts.push(`code=${err.code}`);
+
+  const cause = err.cause;
+  if (cause) {
+    const causeParts = [];
+    if (cause.message) causeParts.push(cause.message);
+    if (cause.code) causeParts.push(`code=${cause.code}`);
+    if (cause.errno) causeParts.push(`errno=${cause.errno}`);
+    if (cause.syscall) causeParts.push(`syscall=${cause.syscall}`);
+    if (cause.hostname) causeParts.push(`host=${cause.hostname}`);
+    if (causeParts.length > 0) parts.push(`cause: ${causeParts.join(', ')}`);
+  }
+
+  return parts.join(' | ');
 }
 
 function isExplicitRateLimitError(err) {
@@ -984,6 +1039,8 @@ export async function runAgentWithAPI(opts) {
     onRateLimited = null,
     resolveNewToken = null,
     onProgress = null,
+    resumeState = null,
+    onCheckpoint = null,
   } = opts;
 
   const startTime = Date.now();
@@ -1071,13 +1128,21 @@ export async function runAgentWithAPI(opts) {
   let totalCost = 0;
 
   // Initial messages in pi-ai format
-  const messages = [
+  const normalizedResumeState = normalizeResumeState(resumeState);
+  const messages = normalizedResumeState?.messages || [
     buildUserMessage('Begin your work now. Follow the instructions in the system prompt.'),
   ];
 
   const MAX_ITERATIONS = 200;
-  let lastResultText = '';
-  let lastInputTokens = 0;
+  let lastResultText = normalizedResumeState?.lastResultText || '';
+  let lastInputTokens = normalizedResumeState?.lastInputTokens || 0;
+
+  const emitCheckpoint = () => {
+    if (!onCheckpoint) return;
+    onCheckpoint(buildResumeCheckpoint(messages, lastResultText, lastInputTokens));
+  };
+
+  emitCheckpoint();
 
   try {
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
@@ -1089,8 +1154,7 @@ export async function runAgentWithAPI(opts) {
 
       // Auto-compact conversation history when approaching context limit
       // Use lastInputTokens (from most recent API call) not cumulative total
-      const TOKEN_LIMIT = 160000; // leave headroom below 200K
-      if (lastInputTokens > TOKEN_LIMIT && messages.length > 5) {
+      if (shouldCompactHistory(lastInputTokens, messages.length) && messages.length > 5) {
         let keep = Math.max(3, Math.floor(messages.length * 0.4));
         // Ensure we don't split assistant/tool-result pairs — the kept portion
         // must start with an assistant message (not a tool result)
@@ -1150,15 +1214,17 @@ export async function runAgentWithAPI(opts) {
           const summary = summaryResponse.content || '(compaction failed — earlier context was dropped)';
           log(`Compacted ${toCompact.length} messages into summary (${summary.length} chars)`);
 
-          messages.splice(1, 0,
-            buildUserMessage(`[System: The conversation history was auto-compacted to stay within context limits. Here is a summary of the earlier work:]\n\n${summary}`),
-          );
-        } catch (compactErr) {
-          log(`Compaction summarization failed: ${compactErr.message}, falling back to trim`);
-          messages.splice(1, 0,
-            buildUserMessage(`[System: ${toCompact.length} earlier messages were trimmed to stay within context limits. Continue your work based on what you can see.]`),
-          );
-        }
+              messages.splice(1, 0,
+                buildUserMessage(`[System: The conversation history was auto-compacted to stay within context limits. Here is a summary of the earlier work:]\n\n${summary}`),
+              );
+              emitCheckpoint();
+            } catch (compactErr) {
+              log(`Compaction summarization failed: ${compactErr.message}, falling back to trim`);
+              messages.splice(1, 0,
+                buildUserMessage(`[System: ${toCompact.length} earlier messages were trimmed to stay within context limits. Continue your work based on what you can see.]`),
+              );
+              emitCheckpoint();
+            }
       }
 
       // Prepare system prompt (add Claude Code prefix for Anthropic OAuth)
@@ -1178,6 +1244,7 @@ export async function runAgentWithAPI(opts) {
           });
           break; // success
         } catch (err) {
+          const detailedError = formatErrorDetails(err);
           if (aborted || err.name === 'AbortError' || abortController.signal.aborted) {
             log(`Agent ${abortReason === 'timeout' ? 'timeout' : 'termination'} during API call`);
             return makeResult(false, lastResultText || (abortReason === 'timeout' ? 'Agent timed out' : 'Agent was terminated'), { timedOut: abortReason === 'timeout' });
@@ -1185,7 +1252,7 @@ export async function runAgentWithAPI(opts) {
           const isRetryable = isRetryableProviderError(err);
           if (isRetryable && attempt < MAX_RETRIES) {
             // Parse cooldown from error message (supports "~162 min", "30s", "2 hours", etc.)
-            const cooldownMs = parseRetryCooldown(err.message);
+            const cooldownMs = parseRetryCooldown(detailedError);
 
             // Mark key as rate-limited with actual cooldown duration
             if (onRateLimited && keyId && isExplicitRateLimitError(err)) {
@@ -1229,7 +1296,7 @@ export async function runAgentWithAPI(opts) {
             continue;
           }
           // Context length exceeded — emergency compact and retry once
-          const isContextError = /context_length_exceeded|context.window|too.many.tokens|maximum.context/i.test(err.message);
+          const isContextError = /context_length_exceeded|context.window|too.many.tokens|maximum.context/i.test(detailedError);
           if (isContextError && messages.length > 3 && !contextCompacted) {
             log(`Context length exceeded — emergency compaction (${messages.length} messages)...`);
             // Aggressively compact: keep only first message + last 20% of history
@@ -1291,13 +1358,14 @@ export async function runAgentWithAPI(opts) {
                 buildUserMessage(`[System: ${toCompact.length} earlier messages were trimmed due to context limits. Continue based on what you can see.]`),
               );
             }
+            emitCheckpoint();
             contextCompacted = true; // prevent infinite compaction loops
             attempt--; // don't count this as a retry attempt
             continue; // retry the API call with compacted history
           }
 
-          log(`API error: ${err.message}`);
-          return makeResult(false, `API error: ${err.message}`);
+          log(`API error: ${detailedError}`);
+          return makeResult(false, `API error: ${detailedError}`);
         }
       }
 
@@ -1353,6 +1421,7 @@ export async function runAgentWithAPI(opts) {
 
       // Check stop reason
       if (response.stopReason === 'end_turn' || response.stopReason === 'max_tokens') {
+        emitCheckpoint();
         return makeResult(true, lastResultText);
       }
 
@@ -1360,6 +1429,7 @@ export async function runAgentWithAPI(opts) {
       if (response.stopReason === 'tool_use') {
         // Add assistant message to history
         messages.push(buildAssistantMessage(response));
+        emitCheckpoint();
 
         // Execute tools
         const toolResults = [];
@@ -1382,8 +1452,10 @@ export async function runAgentWithAPI(opts) {
         for (const trMsg of buildToolResultMessages(toolResults)) {
           messages.push(trMsg);
         }
+        emitCheckpoint();
       } else {
         log(`Unexpected stop reason: ${response.stopReason}`);
+        emitCheckpoint();
         return makeResult(true, lastResultText);
       }
     }
@@ -1398,4 +1470,15 @@ export async function runAgentWithAPI(opts) {
 }
 
 // Exported for testing
-export { executeRead, executeWrite, executeEdit, executeGlob, executeGrep, executeTool };
+export {
+  executeRead,
+  executeWrite,
+  executeEdit,
+  executeGlob,
+  executeGrep,
+  executeTool,
+  normalizeResumeState,
+  buildResumeCheckpoint,
+  shouldCompactHistory,
+  formatErrorDetails,
+};
