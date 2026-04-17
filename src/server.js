@@ -2520,6 +2520,7 @@ class ProjectRunner {
     const visMode = visibility?.mode || 'full';
     const repoDir = this.path;
     const ownWorkspaceDir = path.join(this.agentDir, 'workspace', agent.name);
+    const allAgentWorkspacesDir = path.join(this.agentDir, 'workspace');
     const read = [repoDir];
     const write = [repoDir];
     if (visMode !== 'blind') {
@@ -2529,9 +2530,10 @@ class ProjectRunner {
     if (agent.isManager && agent.name !== 'final_review' && visMode !== 'blind') {
       read.push(this.workerSkillsDir);
       write.push(this.workerSkillsDir);
+      // Managers need to read subordinates' workspace notes to assess status
+      read.push(allAgentWorkspacesDir);
     }
     const denied = [
-      path.join(this.agentDir, 'workspace'),
       path.join(this.agentDir, 'responses'),
       path.join(this.agentDir, 'uploads'),
       path.join(this.agentDir, 'skills'),
@@ -2539,6 +2541,10 @@ class ProjectRunner {
       path.join(this.agentDir, 'orchestrator.log'),
       path.join(this.agentDir, 'project.db'),
     ];
+    // Non-manager agents can only see their own workspace, deny the rest
+    if (!agent.isManager) {
+      denied.push(allAgentWorkspacesDir);
+    }
     return { read, write, denied, dbPath: path.join(this.agentDir, 'project.db') };
   }
 
