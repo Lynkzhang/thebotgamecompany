@@ -861,6 +861,15 @@ class ProjectRunner {
           }
         } catch {}
       }
+      // Fallback: infer owner/repo from directory structure (e.g. .../github.com/Owner/Repo/repo)
+      if (this._repo === null) {
+        const normalized = this.path.replace(/\\/g, '/').replace(/\/+$/, '');
+        const ghMatch = normalized.match(/github\.com\/([^/]+\/[^/]+)/);
+        if (ghMatch) {
+          this._repo = ghMatch[1];
+          log(`Inferred repo from path: ${this._repo} (no git remotes found)`, this.id);
+        }
+      }
       if (this._repo === null) this._repo = null;
     }
     return this._repo;
