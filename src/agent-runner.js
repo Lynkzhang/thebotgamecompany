@@ -56,6 +56,27 @@ function shouldCompactHistory(lastInputTokens, messageCount) {
   return lastInputTokens > 120000 || messageCount > 120;
 }
 
+function hasOrphanedToolCalls(messages) {
+  const toolCallIds = new Set();
+  for (const msg of messages) {
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block.type === 'tool_call') {
+          toolCallIds.add(block.id);
+        }
+      }
+    }
+    if (msg.role === 'toolResult' && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block.toolCallId) {
+          toolCallIds.delete(block.toolCallId);
+        }
+      }
+    }
+  }
+  return toolCallIds.size > 0;
+}
+
 // ---------------------------------------------------------------------------
 // Parse retry cooldown from error messages
 // Supports: "~162 min", "30s", "2 hours", "retry in 5m", "Retry-After: 120"
@@ -1152,9 +1173,14 @@ export async function runAgentWithAPI(opts) {
         return makeResult(false, lastResultText || (isTimeout ? 'Agent timed out' : 'Agent was terminated'), { timedOut: isTimeout });
       }
 
-      // Auto-compact conversation history when approaching context limit
+// Auto-compact conversation history when approaching context limit
       // Use lastInputTokens (from most recent API call) not cumulative total
-      if (shouldCompactHistory(lastInputTokens, messages.length) && messages.length > 5) {
+      // Also compact if we have orphaned tool_calls without tool results (can happen after resume)
+      const hasOrphaned = hasOrphanedToolCalls(messages);
+      if ((shouldCompactHistory(lastInputTokens, messages.length) || hasOrphaned) && messages.length > 5) {
+        if (hasOrphaned) {
+          log(`Compacting: found ${messages.length - messages.filter(m => m.role !== 'toolResult').length} orphaned tool calls without responses`);
+        }
         let keep = Math.max(3, Math.floor(messages.length * 0.4));
         // Ensure we don't split assistant/tool-result pairs — the kept portion
         // must start with an assistant message (not a tool result)
