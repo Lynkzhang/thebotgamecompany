@@ -1148,11 +1148,27 @@ export async function runAgentWithAPI(opts) {
   // Accumulated cost (from pi-ai per-call cost)
   let totalCost = 0;
 
-  // Initial messages in pi-ai format
+// Initial messages in pi-ai format
   const normalizedResumeState = normalizeResumeState(resumeState);
   const messages = normalizedResumeState?.messages || [
     buildUserMessage('Begin your work now. Follow the instructions in the system prompt.'),
   ];
+
+  // Clean orphaned tool_calls immediately after loading from checkpoint
+  // This prevents "must be followed by tool messages" errors
+  if (normalizedResumeState && hasOrphanedToolCalls(messages)) {
+    log(`Cleaning ${messages.filter(m => m.role === 'assistant').length} orphaned tool_calls from checkpoint...`);
+    // Keep system + last messages, remove orphaned assistants
+    const systemMsg = messages[0];
+    const nonOrphans = messages.filter(m => {
+      if (m.role !== 'assistant') return true;
+      if (!Array.isArray(m.content)) return true;
+      return !m.content.some(b => b.type === 'tool_call');
+    });
+    messages.length = 0;
+    messages.push(systemMsg, ...nonOrphans.slice(-20));
+    emitCheckpoint();
+  }
 
   const MAX_ITERATIONS = 200;
   let lastResultText = normalizedResumeState?.lastResultText || '';
