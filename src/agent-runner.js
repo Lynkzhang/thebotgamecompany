@@ -56,25 +56,41 @@ function shouldCompactHistory(lastInputTokens, messageCount) {
   return lastInputTokens > 120000 || messageCount > 120;
 }
 
-function hasOrphanedToolCalls(messages) {
+function getOrphanedToolCallIds(messages) {
   const toolCallIds = new Set();
   for (const msg of messages) {
     if (msg.role === 'assistant' && Array.isArray(msg.content)) {
       for (const block of msg.content) {
-        if (block.type === 'tool_call') {
+        if (block.type === 'toolCall' && block.id) {
           toolCallIds.add(block.id);
         }
       }
     }
-    if (msg.role === 'toolResult' && Array.isArray(msg.content)) {
-      for (const block of msg.content) {
-        if (block.toolCallId) {
-          toolCallIds.delete(block.toolCallId);
-        }
-      }
+    if (msg.role === 'toolResult' && msg.toolCallId) {
+      toolCallIds.delete(msg.toolCallId);
     }
   }
-  return toolCallIds.size > 0;
+  return toolCallIds;
+}
+
+function hasOrphanedToolCalls(messages) {
+  return getOrphanedToolCallIds(messages).size > 0;
+}
+
+function removeOrphanedToolCalls(messages) {
+  const orphanedIds = getOrphanedToolCallIds(messages);
+  if (orphanedIds.size === 0) return 0;
+
+  const filtered = messages.filter((msg) => {
+    if (msg.role !== 'assistant' || !Array.isArray(msg.content)) return true;
+    const toolCalls = msg.content.filter((block) => block.type === 'toolCall' && block.id);
+    if (toolCalls.length === 0) return true;
+    return toolCalls.some((block) => !orphanedIds.has(block.id));
+  });
+
+  messages.length = 0;
+  messages.push(...filtered);
+  return orphanedIds.size;
 }
 
 // ---------------------------------------------------------------------------
@@ -1148,27 +1164,11 @@ export async function runAgentWithAPI(opts) {
   // Accumulated cost (from pi-ai per-call cost)
   let totalCost = 0;
 
-// Initial messages in pi-ai format
+  // Initial messages in pi-ai format
   const normalizedResumeState = normalizeResumeState(resumeState);
   const messages = normalizedResumeState?.messages || [
     buildUserMessage('Begin your work now. Follow the instructions in the system prompt.'),
   ];
-
-  // Clean orphaned tool_calls immediately after loading from checkpoint
-  // This prevents "must be followed by tool messages" errors
-  if (normalizedResumeState && hasOrphanedToolCalls(messages)) {
-    log(`Cleaning ${messages.filter(m => m.role === 'assistant').length} orphaned tool_calls from checkpoint...`);
-    // Keep system + last messages, remove orphaned assistants
-    const systemMsg = messages[0];
-    const nonOrphans = messages.filter(m => {
-      if (m.role !== 'assistant') return true;
-      if (!Array.isArray(m.content)) return true;
-      return !m.content.some(b => b.type === 'tool_call');
-    });
-    messages.length = 0;
-    messages.push(systemMsg, ...nonOrphans.slice(-20));
-    emitCheckpoint();
-  }
 
   const MAX_ITERATIONS = 200;
   let lastResultText = normalizedResumeState?.lastResultText || '';
@@ -1178,6 +1178,13 @@ export async function runAgentWithAPI(opts) {
     if (!onCheckpoint) return;
     onCheckpoint(buildResumeCheckpoint(messages, lastResultText, lastInputTokens));
   };
+
+  if (normalizedResumeState) {
+    const removedToolCalls = removeOrphanedToolCalls(messages);
+    if (removedToolCalls > 0) {
+      log(`Removed ${removedToolCalls} orphaned tool_calls from checkpoint before resume`);
+    }
+  }
 
   emitCheckpoint();
 
@@ -1192,10 +1199,11 @@ export async function runAgentWithAPI(opts) {
 // Auto-compact conversation history when approaching context limit
       // Use lastInputTokens (from most recent API call) not cumulative total
       // Also compact if we have orphaned tool_calls without tool results (can happen after resume)
-      const hasOrphaned = hasOrphanedToolCalls(messages);
+      const orphanedToolCalls = getOrphanedToolCallIds(messages);
+      const hasOrphaned = orphanedToolCalls.size > 0;
       if ((shouldCompactHistory(lastInputTokens, messages.length) || hasOrphaned) && messages.length > 5) {
         if (hasOrphaned) {
-          log(`Compacting: found ${messages.length - messages.filter(m => m.role !== 'toolResult').length} orphaned tool calls without responses`);
+          log(`Compacting: found ${orphanedToolCalls.size} orphaned tool calls without responses`);
         }
         let keep = Math.max(3, Math.floor(messages.length * 0.4));
         // Ensure we don't split assistant/tool-result pairs — the kept portion
