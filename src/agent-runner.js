@@ -33,8 +33,16 @@ function normalizeResumeState(resumeState) {
   if (!resumeState || typeof resumeState !== 'object') return null;
   const messages = Array.isArray(resumeState.messages) ? cloneJson(resumeState.messages) : null;
   if (!messages || messages.length === 0) return null;
+  const sanitizedMessages = messages.filter((msg) => {
+    if (msg.role === 'toolResult') return false;
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      return !msg.content.some((block) => block.type === 'toolCall');
+    }
+    return true;
+  });
+  if (sanitizedMessages.length === 0) return null;
   return {
-    messages,
+    messages: sanitizedMessages,
     lastResultText: typeof resumeState.lastResultText === 'string' ? resumeState.lastResultText : '',
     lastInputTokens: Number.isFinite(resumeState.lastInputTokens) ? resumeState.lastInputTokens : 0,
   };
