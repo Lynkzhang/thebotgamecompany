@@ -12,6 +12,94 @@
 import Database from 'better-sqlite3';
 import { parseArgs } from 'node:util';
 
+const AGENT_NAME_ALIASES = { athena: 'producer', ares: 'pm', apollo: 'qa_lead', themis: 'final_review' };
+const RESERVED_MANAGER_NAMES = new Set(['producer', 'pm', 'qa_lead', 'final_review']);
+const SHELL_ISSUE_TITLE_RE = /(?:\[(?:OBSOLETE|REPLACED|FROZEN)\]|\b(?:rollback|overdue|replan|replanning|planning(?: complete)?|closeout|handoff|reconciliation|blocked at pm|qa prep|implementation complete|verification)\b)/i;
+
+function normalizeAgentName(name) {
+  const raw = String(name || '').trim();
+  return AGENT_NAME_ALIASES[raw] || raw;
+}
+
+function extractIssueRefs(text = '') {
+  return [...new Set((String(text).match(/#(\d+)/g) || []).map((match) => match.slice(1)))];
+}
+
+function isShellIssueTitle(title = '') {
+  return SHELL_ISSUE_TITLE_RE.test(String(title || ''));
+}
+
+function findReferencedHumanIssueIds(refs = []) {
+  if (!Array.isArray(refs) || refs.length === 0) return [];
+  const ids = refs.map(ref => parseInt(ref, 10)).filter(Number.isFinite);
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(', ');
+  return db.prepare(`SELECT id FROM issues WHERE creator = 'human' AND id IN (${placeholders}) ORDER BY id ASC`)
+    .all(...ids)
+    .map(row => String(row.id));
+}
+
+function findReusableShellIssue({ title, body = '', creator = '', assignee = '' }) {
+  const normalizedCreator = normalizeAgentName(creator || '');
+  if (!RESERVED_MANAGER_NAMES.has(normalizedCreator)) return null;
+  if (!isShellIssueTitle(title)) return null;
+
+  const refs = extractIssueRefs(`${title}\n${body}`);
+  if (refs.length === 0) return null;
+  const humanRefs = findReferencedHumanIssueIds(refs);
+  if (humanRefs.length === 0) return null;
+
+  const candidates = db.prepare(`
+    SELECT id, title, body, creator, assignee
+    FROM issues
+    WHERE status = 'open'
+    ORDER BY id DESC
+  `).all();
+
+  for (const candidate of candidates) {
+    if (candidate.creator === 'human') continue;
+    if (!isShellIssueTitle(candidate.title)) continue;
+    const candidateRefs = extractIssueRefs(`${candidate.title}\n${candidate.body || ''}`);
+    const candidateHumanRefs = findReferencedHumanIssueIds(candidateRefs);
+    if (!candidateHumanRefs.some(ref => humanRefs.includes(ref))) continue;
+    return candidate;
+  }
+  return null;
+}
+
+function autoCloseStaleShellIssues({ issueId, title, body = '', creator = '' }) {
+  const normalizedCreator = normalizeAgentName(creator || '');
+  if (!RESERVED_MANAGER_NAMES.has(normalizedCreator)) return [];
+  if (!isShellIssueTitle(title)) return [];
+
+  const refs = extractIssueRefs(`${title}\n${body}`);
+  if (refs.length === 0) return [];
+  const humanRefs = findReferencedHumanIssueIds(refs);
+  if (humanRefs.length === 0) return [];
+
+  const candidates = db.prepare(`
+    SELECT id, title, body, creator
+    FROM issues
+    WHERE status = 'open' AND id != ?
+    ORDER BY id ASC
+  `).all(issueId);
+
+  const now = new Date().toISOString();
+  const closed = [];
+  for (const candidate of candidates) {
+    if (candidate.creator === 'human') continue;
+    if (!isShellIssueTitle(candidate.title)) continue;
+    const candidateRefs = extractIssueRefs(`${candidate.title}\n${candidate.body || ''}`);
+    const candidateHumanRefs = findReferencedHumanIssueIds(candidateRefs);
+    if (!candidateHumanRefs.some(ref => humanRefs.includes(ref))) continue;
+    db.prepare("UPDATE issues SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?").run(now, now, candidate.id);
+    db.prepare('INSERT INTO comments (issue_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+      .run(candidate.id, 'system', `Auto-closed as superseded by #${issueId} (${title.trim()}).`, now);
+    closed.push(candidate.id);
+  }
+  return closed;
+}
+
 const dbPath = process.env.TBC_DB;
 if (!dbPath) {
   console.error('Error: TBC_DB environment variable not set');
@@ -119,9 +207,31 @@ const commands = {
       process.exit(1);
     }
     const now = new Date().toISOString();
+    const reusableIssue = findReusableShellIssue({
+      title: values.title,
+      body: values.body || '',
+      creator: values.creator,
+      assignee: values.assignee || null,
+    });
+    if (reusableIssue) {
+      db.prepare('INSERT INTO comments (issue_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+        .run(reusableIssue.id, 'system', `Reused existing active shell issue instead of creating a duplicate: ${values.title}`, now);
+      db.prepare('UPDATE issues SET updated_at = ? WHERE id = ?').run(now, reusableIssue.id);
+      console.log(`Reused issue #${reusableIssue.id}`);
+      return;
+    }
     const stmt = db.prepare('INSERT INTO issues (title, body, creator, assignee, labels, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
     const result = stmt.run(values.title, values.body || '', values.creator, values.assignee || null, values.labels || '', now, now);
+    const autoClosed = autoCloseStaleShellIssues({
+      issueId: result.lastInsertRowid,
+      title: values.title,
+      body: values.body || '',
+      creator: values.creator,
+    });
     console.log(`Created issue #${result.lastInsertRowid}`);
+    if (autoClosed.length > 0) {
+      console.log(`Auto-closed stale issues: ${autoClosed.map(id => `#${id}`).join(', ')}`);
+    }
   },
 
   'issue-list'() {
