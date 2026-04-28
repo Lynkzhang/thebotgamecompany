@@ -151,6 +151,24 @@ function formatErrorDetails(err) {
   return parts.join(' | ');
 }
 
+function appendBoundedOutput(state, chunk, limit = 100000) {
+  if (!chunk) return;
+  const text = typeof chunk === 'string' ? chunk : chunk.toString();
+  if (!text) return;
+  if (state.truncated) return;
+  const remaining = limit - state.text.length;
+  if (remaining <= 0) {
+    state.truncated = true;
+    return;
+  }
+  if (text.length <= remaining) {
+    state.text += text;
+    return;
+  }
+  state.text += text.slice(0, remaining);
+  state.truncated = true;
+}
+
 function isExplicitRateLimitError(err) {
   const status = err?.status || err?.code || 0;
   const message = String(err?.message || '');
@@ -745,25 +763,39 @@ function executeBash(input, cwd, remainingMs = 0, bashEnv = null, runtime = null
       spawnArgs = ['-f', sandboxProfilePath, 'bash', '-c', command];
     }
 
+    const isWindows = process.platform === 'win32';
     const proc = spawn(spawnCmd, spawnArgs, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,  // new process group so grandchildren can be killed too
+      detached: !isWindows,
+      windowsHide: true,
       timeout,
       ...(bashEnv ? { env: bashEnv } : {}),
     });
-    proc.unref();  // don't keep the event loop alive
+    if (!isWindows) {
+      proc.unref();
+    }
     runtime?.registerProcess?.(proc);
 
-    let stdout = '';
-    let stderr = '';
+    const stdout = { text: '', truncated: false };
+    const stderr = { text: '', truncated: false };
     let settled = false;
-    proc.stdout.on('data', (d) => { stdout += d; });
-    proc.stderr.on('data', (d) => { stderr += d; });
+    proc.stdout.on('data', (d) => { appendBoundedOutput(stdout, d); });
+    proc.stderr.on('data', (d) => { appendBoundedOutput(stderr, d); });
 
     const killProc = (signal) => {
-      // Kill the entire process group (negative pid) to catch grandchildren
-      try { process.kill(-proc.pid, signal); } catch {}
+      if (isWindows) {
+        try {
+          const killer = spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+          killer.unref();
+        } catch {
+          try { proc.kill(signal); } catch {}
+        }
+        return;
+      }
+      try { process.kill(-proc.pid, signal); } catch {
+        try { proc.kill(signal); } catch {}
+      }
     };
     const onAbort = () => {
       killProc('SIGTERM');
@@ -783,13 +815,13 @@ function executeBash(input, cwd, remainingMs = 0, bashEnv = null, runtime = null
       runtime?.signal?.removeEventListener('abort', onAbort);
       runtime?.unregisterProcess?.(proc);
       let result = '';
-      if (stdout) result += stdout;
-      if (stderr) result += (result ? '\n' : '') + stderr;
+      if (stdout.text) result += stdout.text;
+      if (stderr.text) result += (result ? '\n' : '') + stderr.text;
+      if (stdout.truncated || stderr.truncated) {
+        result += (result ? '\n\n' : '') + '... (output truncated) ...';
+      }
       if (code !== 0 && code !== null) {
         result += `\nExit code: ${code}`;
-      }
-      if (result.length > 100000) {
-        result = result.slice(0, 50000) + '\n\n... (output truncated) ...\n\n' + result.slice(-50000);
       }
       if (sandboxProfilePath) {
         try { fs.rmSync(path.dirname(sandboxProfilePath), { recursive: true, force: true }); } catch {}
