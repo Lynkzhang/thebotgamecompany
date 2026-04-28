@@ -42,6 +42,7 @@ const PHASE_ALIASES = { athena: 'planning' };
 const RESERVED_MANAGER_NAMES = new Set(['producer', 'pm', 'qa_lead', 'final_review']);
 const PARALLEL_SAFE_ROLE_RE = /(策划|主策|美术|主美|QA|测试|分析|研究|审校|文案)/i;
 const PARALLEL_BLOCKED_ROLE_RE = /(程序|主程|工程|开发|PM|执行制作人|最终验收)/i;
+const SHELL_ISSUE_TITLE_RE = /(?:\[(?:OBSOLETE|REPLACED|FROZEN)\]|\b(?:rollback|overdue|replan|replanning|planning(?: complete)?|closeout|handoff|reconciliation|blocked at pm|qa prep|implementation complete|verification)\b)/i;
 
 function normalizeAgentName(name) {
   const raw = String(name || '').trim();
@@ -51,6 +52,14 @@ function normalizeAgentName(name) {
 function normalizePhaseName(phase) {
   const raw = String(phase || '').trim();
   return PHASE_ALIASES[raw] || raw;
+}
+
+function extractIssueRefs(text = '') {
+  return [...new Set((String(text).match(/#(\d+)/g) || []).map((match) => match.slice(1)))];
+}
+
+function isShellIssueTitle(title = '') {
+  return SHELL_ISSUE_TITLE_RE.test(String(title || ''));
 }
 
 function maskToken(token) {
@@ -1453,6 +1462,125 @@ class ProjectRunner {
     }
   }
 
+  getOpenIssues(limit = 200) {
+    const db = this.getDb();
+    try {
+      return db.prepare(`
+        SELECT id, title, body, status, creator, assignee, created_at, updated_at
+        FROM issues
+        WHERE status = 'open'
+        ORDER BY id ASC
+        LIMIT ?
+      `).all(limit);
+    } finally {
+      db.close();
+    }
+  }
+
+  _findCompletionBlockingIssues() {
+    return this.getOpenIssues().filter(issue => issue.status === 'open');
+  }
+
+  _findReferencedHumanIssueIds(db, refs = []) {
+    if (!Array.isArray(refs) || refs.length === 0) return [];
+    const ids = refs.map(ref => parseInt(ref, 10)).filter(Number.isFinite);
+    if (ids.length === 0) return [];
+    const placeholders = ids.map(() => '?').join(', ');
+    return db.prepare(`
+      SELECT id
+      FROM issues
+      WHERE creator = 'human' AND id IN (${placeholders})
+      ORDER BY id ASC
+    `).all(...ids).map(row => String(row.id));
+  }
+
+  _autoCloseStaleShellIssues(db, { issueId, title, body = '', creator = '' }) {
+    const normalizedCreator = normalizeAgentName(creator || '');
+    if (!RESERVED_MANAGER_NAMES.has(normalizedCreator)) return [];
+    if (!isShellIssueTitle(title)) return [];
+
+    const refs = extractIssueRefs(`${title}\n${body}`);
+    if (refs.length === 0) return [];
+
+    const candidates = db.prepare(`
+      SELECT id, title, body, creator, assignee
+      FROM issues
+      WHERE status = 'open' AND id != ?
+      ORDER BY id ASC
+    `).all(issueId);
+
+    const now = new Date().toISOString();
+    const closed = [];
+    for (const candidate of candidates) {
+      if (candidate.creator === 'human') continue;
+      if (!isShellIssueTitle(candidate.title)) continue;
+      const candidateRefs = extractIssueRefs(`${candidate.title}\n${candidate.body || ''}`);
+      if (!candidateRefs.some(ref => refs.includes(ref))) continue;
+
+      db.prepare('UPDATE issues SET status = ?, updated_at = ?, closed_at = ? WHERE id = ?')
+        .run('closed', now, now, candidate.id);
+      db.prepare('INSERT INTO comments (issue_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+        .run(candidate.id, 'system', `Auto-closed as superseded by #${issueId} (${title.trim()}).`, now);
+      closed.push(candidate.id);
+    }
+    return closed;
+  }
+
+  _findReusableShellIssue(db, { title, body = '', creator = '', assignee = '' }) {
+    const normalizedCreator = normalizeAgentName(creator || '');
+    if (!RESERVED_MANAGER_NAMES.has(normalizedCreator)) return null;
+    if (!isShellIssueTitle(title)) return null;
+
+    const refs = extractIssueRefs(`${title}\n${body}`);
+    if (refs.length === 0) return null;
+    const humanRefs = this._findReferencedHumanIssueIds(db, refs);
+    if (humanRefs.length === 0) return null;
+
+    const candidates = db.prepare(`
+      SELECT id, title, body, creator, assignee
+      FROM issues
+      WHERE status = 'open'
+      ORDER BY id DESC
+    `).all();
+
+    for (const candidate of candidates) {
+      if (candidate.creator === 'human') continue;
+      if (!isShellIssueTitle(candidate.title)) continue;
+      const candidateRefs = extractIssueRefs(`${candidate.title}\n${candidate.body || ''}`);
+      const candidateHumanRefs = this._findReferencedHumanIssueIds(db, candidateRefs);
+      if (!candidateHumanRefs.some(ref => humanRefs.includes(ref))) continue;
+      return candidate;
+    }
+    return null;
+  }
+
+  _autoCloseShellIssuesForRefs(db, refs = [], reason = 'superseded') {
+    if (!Array.isArray(refs) || refs.length === 0) return [];
+    const humanRefs = this._findReferencedHumanIssueIds(db, refs);
+    if (humanRefs.length === 0) return [];
+    const candidates = db.prepare(`
+      SELECT id, title, body, creator
+      FROM issues
+      WHERE status = 'open'
+      ORDER BY id ASC
+    `).all();
+    const now = new Date().toISOString();
+    const closed = [];
+    for (const candidate of candidates) {
+      if (candidate.creator === 'human') continue;
+      if (!isShellIssueTitle(candidate.title)) continue;
+      const candidateRefs = extractIssueRefs(`${candidate.title}\n${candidate.body || ''}`);
+      const candidateHumanRefs = this._findReferencedHumanIssueIds(db, candidateRefs);
+      if (!candidateHumanRefs.some(ref => humanRefs.includes(ref))) continue;
+      db.prepare('UPDATE issues SET status = ?, updated_at = ?, closed_at = ? WHERE id = ?')
+        .run('closed', now, now, candidate.id);
+      db.prepare('INSERT INTO comments (issue_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+        .run(candidate.id, 'system', `Auto-closed because the related chain was ${reason}.`, now);
+      closed.push(candidate.id);
+    }
+    return closed;
+  }
+
   async createIssue(title, body = '', creator = 'human', assignee = null) {
     if (!title?.trim()) throw new Error('Missing issue title');
     try {
@@ -1462,17 +1590,43 @@ class ProjectRunner {
       const normalizedAssignee = assignee
         ? normalizeAgentName(assignee)
         : normalizedCreator === 'human' ? 'producer' : null;
+      const reusableIssue = this._findReusableShellIssue(db, {
+        title: title.trim(),
+        body: body.trim(),
+        creator: normalizedCreator,
+        assignee: normalizedAssignee,
+      });
+      if (reusableIssue) {
+        const nowComment = new Date().toISOString();
+        db.prepare('INSERT INTO comments (issue_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+          .run(reusableIssue.id, 'system', `Reused existing active shell issue instead of creating a duplicate: ${title.trim()}`, nowComment);
+        db.prepare('UPDATE issues SET updated_at = ? WHERE id = ?').run(nowComment, reusableIssue.id);
+        db.close();
+        return { success: true, issueId: reusableIssue.id, autoClosedIssueIds: [], reused: true };
+      }
       const result = db.prepare(
         `INSERT INTO issues (title, body, creator, assignee, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
       ).run(title.trim(), body.trim(), normalizedCreator, normalizedAssignee, now, now);
+      const autoClosedIssueIds = this._autoCloseStaleShellIssues(db, {
+        issueId: result.lastInsertRowid,
+        title: title.trim(),
+        body: body.trim(),
+        creator: normalizedCreator,
+      });
       db.close();
-      return { success: true, issueId: result.lastInsertRowid };
+      return { success: true, issueId: result.lastInsertRowid, autoClosedIssueIds };
     } catch (e) {
       throw new Error(`Failed to create issue: ${e.message}`);
     }
   }
 
   getStatus() {
+    const completionBlockingIssues = this._findCompletionBlockingIssues().map(issue => ({
+      id: issue.id,
+      title: issue.title,
+      creator: issue.creator,
+      assignee: issue.assignee,
+    }));
     const activeAgents = Object.values(this.activeAgents || {}).map(entry => ({
       name: entry.name,
       model: entry.model || null,
@@ -1512,6 +1666,7 @@ class ProjectRunner {
       isComplete: this.isComplete || false,
       completionSuccess: this.completionSuccess || false,
       completionMessage: this.completionMessage || null,
+      completionBlockingIssues,
       config: this.loadConfig(),
       agents: this.loadAgents(),
       cost: this.getCostSummary(),
@@ -2157,6 +2312,23 @@ class ProjectRunner {
                 const success = !!completion.success;
                 const message = completion.message || 'Project completed';
                 if (success) {
+                  const blockingIssues = this._findCompletionBlockingIssues();
+                  if (blockingIssues.length > 0) {
+                    const issueList = blockingIssues.slice(0, 8).map(issue => `#${issue.id}`).join(', ');
+                    const feedback = `Project completion blocked: ${blockingIssues.length} open issues remain (${issueList}${blockingIssues.length > 8 ? ', ...' : ''}). Close, supersede, or explicitly resolve them before declaring PROJECT_COMPLETE.`;
+                    this.setState({
+                      phase: 'planning',
+                      examinationFeedback: feedback,
+                      pendingCompletionMessage: null,
+                      isComplete: false,
+                      completionSuccess: false,
+                      completionMessage: null,
+                      isPaused: false,
+                      pauseReason: null,
+                    });
+                    log(`🚫 PROJECT_COMPLETE blocked — ${feedback}`, this.id);
+                    continue;
+                  }
                   this.setState({
                     phase: 'examination',
                     pendingCompletionMessage: message,
@@ -2264,14 +2436,18 @@ class ProjectRunner {
 
             // Check if PM claims milestone complete
             if (result.resultText.includes('<!-- CLAIM_COMPLETE -->')) {
-              log(`🎯 PM claims milestone complete — switching to verification`, this.id);
-              this.updateMilestoneRecord(this.currentMilestoneId, {
-                status: 'verifying',
-                phase: 'verification',
-                cyclesUsed: this.milestoneCyclesUsed,
-              });
-              this.setState({ phase: 'verification' });
-              broadcastEvent({ type: 'phase', project: this.id, phase: 'verification', title: this.milestoneTitle });
+              if (schedule && this.scheduleHasAgentSteps(schedule)) {
+                log(`Ignoring CLAIM_COMPLETE because PM also scheduled agent work in the same response`, this.id);
+              } else {
+                log(`🎯 PM claims milestone complete — switching to verification`, this.id);
+                this.updateMilestoneRecord(this.currentMilestoneId, {
+                  status: 'verifying',
+                  phase: 'verification',
+                  cyclesUsed: this.milestoneCyclesUsed,
+                });
+                this.setState({ phase: 'verification' });
+                broadcastEvent({ type: 'phase', project: this.id, phase: 'verification', title: this.milestoneTitle });
+              }
             }
           }
 
@@ -2358,6 +2534,18 @@ class ProjectRunner {
 
           // Process decision
           if (decision === 'pass') {
+            const verificationRefs = extractIssueRefs(`${this.milestoneTitle || ''}\n${this.milestoneDescription || ''}`);
+            if (verificationRefs.length > 0) {
+              const db = this.getDb();
+              try {
+                const autoClosed = this._autoCloseShellIssuesForRefs(db, verificationRefs, 'verified complete');
+                if (autoClosed.length > 0) {
+                  log(`Auto-closed stale shell issues after verification: ${autoClosed.map(id => `#${id}`).join(', ')}`, this.id);
+                }
+              } finally {
+                db.close();
+              }
+            }
             log(`✅ Milestone verified — waking producer for next milestone`, this.id);
             broadcastEvent({ type: 'verified', project: this.id, title: this.milestoneTitle });
             this.milestoneTitle = null;
